@@ -21,8 +21,3 @@
 - <font color="grey">`style`</font><sup>*</sup>: Code style changes, not affecting code meaning (formatting)
 - <font color="grey">`test`</font><sup>*</sup>: Adding new tests or improving existing ones
 - `theme`: Changes related to UI theming
-
-## Conventional Branches
-
-For each Branch, the name of branch must follow this pattern (`CommitType`/`JIRACODE`/`SUBJECT`)
-For example (`feat/MOB-231/AddMetaObservable`)
