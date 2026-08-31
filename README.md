@@ -1,23 +1,290 @@
 # Network
 
-# Conventional Commits
+A lightweight, protocol-oriented networking framework for iOS built on `URLSession` and Swift concurrency (`async`/`await`). It provides a small, composable core for REST-style requests (`NZNetwork`), a dedicated file downloader/uploader with progress tracking (`NZDownload`), and shared URL/URLRequest helpers (`NZNetworkShared`).
 
-- For each Merge Request, all commits must adhere to [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) spec.
+## Requirements
+
+- iOS 13.0+
+- Swift 5.5+ (uses `async`/`await`)
+
+## Installation — Swift Package Manager
+
+Add the package to your `Package.swift`:
+
+```swift
+dependencies: [
+    .package(url: "https://github.com/sacondeinc/networkiOS.git", from: "1.0.0")
+]
+```
+
+Or in Xcode: **File → Add Package Dependencies…** and paste the repository URL.
+
+The library product is called `NZNetwork` and bundles two targets: `NZNetwork` (requests) and `NZDownload` (downloads/uploads). Import whichever you need:
+
+```swift
+import NZNetwork
+import NZDownload
+```
+
+## Package structure
+
+| Module | Purpose |
+|---|---|
+| `NZNetwork` | GET/POST/PUT/DELETE requests, multipart bodies, request/response interception, error handling |
+| `NZDownload` | Background-friendly file downloads and uploads with progress/pause/resume/cancel |
+| `NZNetworkShared` | Internal helpers (`URL`/`URLRequest`/`Data` extensions) shared by both modules |
+
+---
+
+## 1. `NZNetwork` — making requests
+
+### 1.1 Implement an `Interceptor`
+
+Every request goes through an object conforming to `InterceptorProtocol`. This is where you configure the base URL, timeout, and any per-request logic (auth headers, logging, token refresh, retry, etc.). All methods have default (pass-through) implementations, so you only override what you need.
+
+```swift
+import NZNetwork
+
+final class AppInterceptor: InterceptorProtocol {
+
+    let baseURL = "api.example.com"
+    let timeout: TimeInterval = 15
+
+    // Attach headers/auth before the request is sent
+    func intercept(request: InterceptorRequest) async -> InterceptorRequest {
+        var request = request
+        request.headers["Authorization"] = "Bearer \(TokenStore.shared.accessToken)"
+        return request
+    }
+
+    // Inspect/transform the response, or transparently retry the request
+    func intercept(response: InterceptorResponse) async -> InterceptorResponse {
+        if response.statusCode == 401 {
+            // e.g. refresh the token, then replay the original request
+            var retriedRequest = response.request
+            retriedRequest.headers["Authorization"] = "Bearer \(TokenStore.shared.refreshedToken())"
+            return InterceptorResponse(
+                request: response.request,
+                localizedMessageForStatusCode: response.localizedMessageForStatusCode,
+                statusCode: response.statusCode,
+                headers: response.headers,
+                result: .proceed(request: retriedRequest)
+            )
+        }
+        return response
+    }
+}
+```
+
+`InterceptorResponse.Result` controls what happens next:
+
+- `.response(data:)` — hand the (possibly modified) data back as the result.
+- `.error(error:)` — fail the request with a local error.
+- `.close` — cancel the request.
+- `.proceed(request:)` — resend a (possibly modified) request, e.g. after a token refresh.
+
+### 1.2 Create a `Network` instance
+
+```swift
+let network = Network(interceptor: AppInterceptor())
+```
+
+Keep it around (e.g. as a singleton or injected dependency) — it owns the underlying `URLSession`.
+
+### 1.3 Perform requests
+
+`Network` exposes two parallel API styles: a **result-based** API (`NetworkResult`) and a **throwing** API (`...Throwable`). Use whichever fits your call site.
+
+#### Result-based API
+
+```swift
+let result = await network.get(path: Path(route: "/users", queryItems: [URLQueryItem(name: "page", value: "1")]))
+
+switch result {
+case .success(let data):
+    let users = try? JSONDecoder().decode([User].self, from: data)
+case .remoteError(let data):
+    // Non-2xx status code; `data` is the server's error body
+    break
+case .localError(let error):
+    // Connectivity/encoding/etc. failure
+    break
+case .cancelled:
+    break
+}
+```
+
+```swift
+struct NewUser: Encodable { let name: String }
+
+let result = await network.post(path: Path(route: "/users", queryItems: nil), payload: NewUser(name: "Ada"))
+```
+
+#### Throwing API
+
+```swift
+do {
+    let data = try await network.getThrowable(path: Path(route: "/users", queryItems: nil))
+    let users = try JSONDecoder().decode([User].self, from: data)
+} catch {
+    // Non-2xx responses surface as NetworkError.remoteError(Data)
+    // Local/connectivity failures surface as NetworkError.localError(Error)
+    if let responseData = error.remoteErrorData {
+        // inspect the server's error payload
+    } else if let underlying = error.localError {
+        // inspect the underlying local error
+    }
+}
+```
+
+Available methods on both APIs: `get`, `post(payload:)`, `put(payload:)`, `delete`, `delete(body:)`, plus `...Throwable` equivalents (`getThrowable`, `postThrowable`, `putThrowable`, `deleteThrowable`).
+
+### 1.4 Multipart requests
+
+Define your form fields by conforming to `Part`:
+
+```swift
+struct ImagePart: Part {
+    let name = "avatar"
+    let filename: String? = "avatar.jpg"
+    let body: Data?
+    let value: String? = nil
+    let mimeType: MIMEType? = .image(subtype: .jpeg)
+}
+
+struct TextField: Part {
+    let name: String
+    let filename: String? = nil
+    let body: Data? = nil
+    let value: String?
+    let mimeType: MIMEType? = nil
+}
+```
+
+Then send them as a `POST` or `PUT`, either as variadic arguments or an array:
+
+```swift
+let result = await network.post(
+    path: Path(route: "/profile", queryItems: nil),
+    multipart: ImagePart(body: imageData), TextField(name: "bio", value: "Hello!")
+)
+
+// or
+
+let parts: [Part] = [ImagePart(body: imageData), TextField(name: "bio", value: "Hello!")]
+let data = try await network.postThrowable(path: Path(route: "/profile", queryItems: nil), multipart: parts)
+```
+
+The framework builds the `multipart/form-data` body and `Content-Type` boundary header for you.
+
+### 1.5 `MIMEType`
+
+A typed representation of common MIME types, used for multipart parts:
+
+```swift
+MIMEType.image(subtype: .png)
+MIMEType.document(subtype: .pdf)
+MIMEType.text(subType: .plain(charset: .utf8))
+MIMEType.sniff(fileExtension: "jpg")   // -> .image(subtype: .jpeg)
+MIMEType(mimeType: "application/custom+type")
+```
+
+---
+
+## 2. `NZDownload` — downloading & uploading files
+
+`NZDownloader` wraps a delegate-based `URLSession` for large transfers, exposing progress, pause/resume, and cancellation. Unlike `Network`, it's delegate-driven rather than `async`-return-driven, since progress needs to stream over time.
+
+### 2.1 Create a downloader
+
+```swift
+import NZDownload
+
+let downloader = NZDownloader(baseURL: "api.example.com", timeout: 30)
+```
+
+### 2.2 Download a file
+
+```swift
+final class DownloadHandler: NSObject, NZDownloaderDownloadDelegate {
+    func downloader(_ downloader: NZDownloaderProtocol, downloadTask: Int, didReceiveProgress percentage: Float) {
+        print("Progress: \(percentage)%")
+    }
+    func downloader(_ downloader: NZDownloaderProtocol, downloadTask: Int, didFinishDownloadingTo location: URL) {
+        // Move the file out of the temporary location before returning
+    }
+    func downloader(_ downloader: NZDownloaderProtocol, downloadTask: Int, didResumeAtOffset percentage: Float) {}
+    func downloaderCompletedTask(_ downloader: NZDownloaderProtocol, with identifier: Int) {}
+    func downloader(_ downloader: NZDownloaderProtocol, didCompleteTask identifier: Int, with error: Error) {}
+    @available(iOS 16.0, *)
+    func downloader(_ downloader: NZDownloaderProtocol, didCreateTask identifier: Int) {}
+    func downloader(_ downloader: NZDownloaderProtocol, task identifier: Int, willBeginDelayedRequestWith disposition: URLSession.DelayedRequestDisposition) {}
+    func downloader(_ downloader: NZDownloaderProtocol, taskIsWaitingForConnectivityWith identifier: Int) {}
+    func downloader(_ downloader: NZDownloaderProtocol, didFinishCollecting metrics: URLSessionTaskMetrics, forTaskWith identifier: Int) {}
+}
+
+let handler = DownloadHandler()
+let taskID = downloader.download(from: Path(route: "/files/report.pdf", queryItems: nil), delegate: handler)
+```
+
+Every call returns an `Int` task identifier you use later to control that specific transfer:
+
+```swift
+await downloader.pause(identifier: taskID)
+await downloader.resume(identifier: taskID)
+await downloader.cancel(identifier: taskID)
+
+// Cancel but keep resumable data for later:
+if let resumeData = await downloader.cancelDownloadTask(with: taskID) {
+    downloader.download(resumingFrom: resumeData, delegate: handler)
+}
+```
+
+### 2.3 Upload a file
+
+```swift
+// From in-memory data
+let taskID = downloader.upload(from: fileData, to: Path(route: "/upload", queryItems: nil), delegate: uploadHandler)
+
+// From a file on disk
+let taskID = downloader.upload(fromFile: fileURL, to: Path(route: "/upload", queryItems: nil), delegate: uploadHandler)
+```
+
+Implement `NZDownloaderUploadDelegate` (adds `didReceiveProgress` for uploads) the same way as the download delegate above.
+
+### 2.4 Session-level events
+
+Set `downloader.delegate` (`NZDownloaderDelegate`) to be notified if the underlying `URLSession` becomes invalid.
+
+---
+
+## 3. Error handling reference
+
+- `NetworkResult` — used by the non-throwing `Network` API: `.success`, `.remoteError`, `.localError`, `.cancelled`.
+- `NetworkError` — thrown by the `...Throwable` API: `.remoteError(Data)`, `.localError(Error)`. Use the `Error.remoteErrorData` / `Error.localError` convenience properties to unwrap without a `switch`.
+
+Both paths route through your `Interceptor`'s `intercept(response:)` / `interceptThrowable(response:)`, so centralized error handling (e.g. mapping status codes to app-specific errors, triggering a token refresh) belongs there.
+
+---
+
+## Conventional Commits
+
+- For each Merge Request, all commits must adhere to the [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) spec.
 - Whenever possible, use a module name as a scope (e.g. `fix(service): Fix ProfileResponse issue.`).
 - Use a proper sentence as a description — start with an uppercase letter, end with a dot.
 
-## Allowed commit types
+### Allowed commit types
 
-- <font color="grey">`build`</font><sup>*</sup>: Changes that affect build system (e.g. Gradle update)
+- `build`: Changes that affect build system (e.g. Gradle update)
 - `chore`: Changes other than source or test code (e.g. library version updates)
-- <font color="grey">`ci`</font><sup>*</sup>: CI configuration
-- <font color="grey">`docs`</font><sup>*</sup>: Documentation changes
+- `ci`: CI configuration
+- `docs`: Documentation changes
 - `feat`: A new feature
 - `fix`: Bug fixes
 - `i18n`: Internationalization and translations
 - `perf`: Performance Improvements
 - `refactor`: A change in the source code that neither fixes a bug nor adds a feature
 - `revert`: Reverting a commit
-- <font color="grey">`style`</font><sup>*</sup>: Code style changes, not affecting code meaning (formatting)
-- <font color="grey">`test`</font><sup>*</sup>: Adding new tests or improving existing ones
+- `style`: Code style changes, not affecting code meaning (formatting)
+- `test`: Adding new tests or improving existing ones
 - `theme`: Changes related to UI theming

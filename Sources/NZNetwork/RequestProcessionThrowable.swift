@@ -1,10 +1,3 @@
-//
-//  Untitled.swift
-//  NZNetwork
-//
-//  Created by Mehrdad Goodarzi on 12/1/24.
-//
-
 import Foundation
 
 extension Network {
