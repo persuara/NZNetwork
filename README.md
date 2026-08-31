@@ -19,21 +19,23 @@ dependencies: [
 
 Or in Xcode: **File → Add Package Dependencies…** and paste the repository URL.
 
-The library product is called `NZNetwork` and bundles three targets: `NZNetwork` (requests), `NZDownload` (downloads/uploads), and `NZSocket` (WebSockets). Import whichever you need:
+The library product is called `NZNetwork` and bundles four targets: `NZNetwork` (requests), `NZDownload` (downloads/uploads), `NZSocket` (WebSockets), and `NZReachability` (network status monitoring). Import whichever you need:
 
 ```swift
 import NZNetwork
 import NZDownload
 import NZSocket
+import NZReachability
 ```
 
 ## Package structure
 
 | Module | Purpose |
 |---|---|
-| `NZNetwork` | GET/POST/PUT/PATCH/DELETE/HEAD/OPTIONS requests, multipart bodies, request/response interception, retries, cancellation, error handling |
+| `NZNetwork` | GET/POST/PUT/PATCH/DELETE/HEAD/OPTIONS requests, multipart bodies, request/response interception, retries, cancellation, logging, error handling |
 | `NZDownload` | Background-friendly file downloads and uploads with progress/pause/resume/cancel |
 | `NZSocket` | WebSocket connections with an `async` message stream and connect/disconnect delegate events |
+| `NZReachability` | Online/offline and connection-type monitoring via `NWPathMonitor` |
 | `NZNetworkShared` | Internal helpers (`URL`/`URLRequest`/`Data` extensions) shared by all modules |
 
 ---
@@ -145,6 +147,30 @@ let network = Network(
 ```
 
 Every field has a default matching this framework's historical behavior (no caching, all network types allowed, doesn't wait for connectivity), so omitting `sessionConfiguration` entirely keeps existing code working unchanged. `NetworkSessionConfiguration` is shared by `Network`, `NZDownloader`, and `NZSocket` — same shape, same knobs, wherever you use it.
+
+Finally, pass a `logger: NetworkLogger` to observe every request/response — useful for debugging without entangling logging with your interceptor's actual request/response transformation logic:
+
+```swift
+let network = Network(interceptor: AppInterceptor(), logger: ConsoleNetworkLogger(level: .body))
+```
+
+`ConsoleNetworkLogger` ships with three levels (`.basic`, `.headers`, `.body`) and prints to the console. Bring your own `NetworkLogger` conformance to pipe into `os_log`, a crash reporter's breadcrumbs, or anything else:
+
+```swift
+struct OSLogNetworkLogger: NetworkLogger {
+    func log(request: InterceptorRequest) {
+        os_log("→ %{public}@ %{public}@", request.method.rawValue, request.url.absoluteString)
+    }
+    func log(response: InterceptorResponse, data: Data) {
+        os_log("← %d %{public}@", response.statusCode, response.request.url.absoluteString)
+    }
+    func log(error: Error, for request: InterceptorRequest) {
+        os_log("✗ %{public}@ %{public}@", request.url.absoluteString, error.localizedDescription)
+    }
+}
+```
+
+`log(response:data:)` fires once per actual HTTP round trip — including once per automatic retry — after interception, so it reflects what was actually sent/received on the wire. No `logger` argument (the default) logs nothing, same as before this feature existed.
 
 ### 1.3 Perform requests
 
@@ -515,7 +541,53 @@ All delegate methods have default no-op implementations (or, for `didReceive cha
 
 ---
 
-## 4. Error handling reference
+## 4. `NZReachability` — network status monitoring
+
+`NZReachability` wraps Apple's `NWPathMonitor` to tell you whether the device is online, and over what kind of connection — useful for showing an offline banner, gating expensive requests on Wi-Fi, or deciding whether to bother retrying at all.
+
+### 4.1 Start monitoring
+
+```swift
+import NZReachability
+
+let reachability = NZReachability()
+reachability.start()
+
+print(reachability.isConnected)        // Bool
+print(reachability.currentStatus)      // NZReachabilityStatus?, nil until the first update arrives
+```
+
+Call `reachability.stop()` when you're done (e.g. in `deinit`) to stop the underlying monitor and finish any active `statusUpdates()` stream.
+
+### 4.2 Observe changes
+
+Either via an `AsyncStream`:
+
+```swift
+Task {
+    for await status in reachability.statusUpdates() {
+        print("Connected: \(status.isConnected), via: \(status.connectionType)")
+    }
+}
+```
+
+Or via a delegate:
+
+```swift
+final class ConnectivityHandler: NZReachabilityDelegate {
+    func reachability(_ reachability: NZReachabilityProtocol, didUpdateStatus status: NZReachabilityStatus) {
+        print("Connected: \(status.isConnected), via: \(status.connectionType)")
+    }
+}
+
+reachability.delegate = ConnectivityHandler()
+```
+
+`NZReachabilityStatus` also exposes `isExpensive` (cellular/personal hotspot) and `isConstrained` (Low Data Mode), and `NZConnectionType` distinguishes `.wifi`, `.cellular`, `.wiredEthernet`, `.other`, and `.unavailable`. Pass a `requiredInterfaceType` to `NZReachability`'s initializer to monitor a single interface type instead of all of them (e.g. Wi-Fi-only reachability).
+
+---
+
+## 5. Error handling reference
 
 - `NetworkResult` — used by the non-throwing `Network` API: `.success`, `.remoteError`, `.localError`, `.cancelled`.
 - `NetworkError` — thrown by the `...Throwable` API: `.remoteError(Data)`, `.localError(Error)`. Use the `Error.remoteErrorData` / `Error.localError` convenience properties to unwrap without a `switch`.
