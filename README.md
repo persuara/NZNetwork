@@ -19,11 +19,12 @@ dependencies: [
 
 Or in Xcode: **File → Add Package Dependencies…** and paste the repository URL.
 
-The library product is called `NZNetwork` and bundles two targets: `NZNetwork` (requests) and `NZDownload` (downloads/uploads). Import whichever you need:
+The library product is called `NZNetwork` and bundles three targets: `NZNetwork` (requests), `NZDownload` (downloads/uploads), and `NZSocket` (WebSockets). Import whichever you need:
 
 ```swift
 import NZNetwork
 import NZDownload
+import NZSocket
 ```
 
 ## Package structure
@@ -32,7 +33,8 @@ import NZDownload
 |---|---|
 | `NZNetwork` | GET/POST/PUT/DELETE requests, multipart bodies, request/response interception, error handling |
 | `NZDownload` | Background-friendly file downloads and uploads with progress/pause/resume/cancel |
-| `NZNetworkShared` | Internal helpers (`URL`/`URLRequest`/`Data` extensions) shared by both modules |
+| `NZSocket` | WebSocket connections with an `async` message stream and connect/disconnect delegate events |
+| `NZNetworkShared` | Internal helpers (`URL`/`URLRequest`/`Data` extensions) shared by all modules |
 
 ---
 
@@ -258,7 +260,76 @@ Set `downloader.delegate` (`NZDownloaderDelegate`) to be notified if the underly
 
 ---
 
-## 3. Error handling reference
+## 3. `NZSocket` — WebSocket connections
+
+`NZSocket` wraps `URLSessionWebSocketTask`. Incoming messages are exposed as an `AsyncThrowingStream` so you can `for await` over them; connect/disconnect lifecycle events are reported through a delegate, similar to `NZDownload`.
+
+### 3.1 Create a socket and connect
+
+```swift
+import NZSocket
+
+let socket = NZSocket(baseURL: "api.example.com", timeout: 15)
+socket.connect(to: Path(route: "/chat"), protocols: [])
+```
+
+`connect(to:protocols:)` builds the URL the same way `Network`/`NZDownloader` do (`https` is upgraded to `wss` automatically by `URLSession`), then opens the connection.
+
+### 3.2 Receive messages
+
+```swift
+Task {
+    do {
+        for try await message in socket.messages() {
+            switch message {
+            case .string(let text):
+                print("Received: \(text)")
+            case .data(let data):
+                print("Received \(data.count) bytes")
+            }
+        }
+        print("Connection closed")
+    } catch {
+        print("Connection failed: \(error)")
+    }
+}
+```
+
+Call `messages()` once per connection — it returns the same live stream regardless of when you start iterating it.
+
+### 3.3 Send messages and manage the connection
+
+```swift
+try await socket.send(.string("hello"))
+try await socket.send(.data(payloadData))
+
+try await socket.sendPing()          // keep-alive
+
+socket.disconnect(closeCode: .normalClosure, reason: nil)
+```
+
+`send`/`sendPing` throw `NZSocketError.notConnected` if called before `connect(to:protocols:)` or after the connection has closed.
+
+### 3.4 Lifecycle delegate
+
+```swift
+final class ChatSocketHandler: NZSocketDelegate {
+    func socket(_ socket: NZSocketProtocol, didConnectWithProtocol protocol: String?) {
+        print("Connected")
+    }
+    func socket(_ socket: NZSocketProtocol, didDisconnectWithCode code: URLSessionWebSocketTask.CloseCode, reason: Data?) {
+        print("Disconnected: \(code)")
+    }
+}
+
+socket.delegate = ChatSocketHandler()
+```
+
+Both delegate methods have default no-op implementations, so you only implement what you need. `socket.isConnected` reflects the current connection state at any time.
+
+---
+
+## 4. Error handling reference
 
 - `NetworkResult` — used by the non-throwing `Network` API: `.success`, `.remoteError`, `.localError`, `.cancelled`.
 - `NetworkError` — thrown by the `...Throwable` API: `.remoteError(Data)`, `.localError(Error)`. Use the `Error.remoteErrorData` / `Error.localError` convenience properties to unwrap without a `switch`.
