@@ -37,6 +37,14 @@ public protocol NZSocketDelegate: AnyObject {
     /// - Parameter challenge: The challenge presented by the server.
     /// - Returns: The disposition to use, and a credential when the disposition requires one.
     func socket(_ socket: NZSocketProtocol, didReceive challenge: URLAuthenticationChallenge) async -> (URLSession.AuthChallengeDisposition, URLCredential?)
+
+    /// Tells the delegate that the socket will attempt to reconnect after the connection dropped
+    /// unexpectedly (only fires when a `reconnectPolicy` other than `.none` is in effect).
+    ///
+    /// - Parameters:
+    ///   - attempt: The 1-based attempt number about to be made.
+    ///   - delay: How long the socket will wait before attempting to reconnect.
+    func socket(_ socket: NZSocketProtocol, willReconnectAttempt attempt: Int, after delay: TimeInterval)
 }
 
 public extension NZSocketDelegate {
@@ -45,6 +53,7 @@ public extension NZSocketDelegate {
     func socket(_ socket: NZSocketProtocol, didReceive challenge: URLAuthenticationChallenge) async -> (URLSession.AuthChallengeDisposition, URLCredential?) {
         (.performDefaultHandling, nil)
     }
+    func socket(_ socket: NZSocketProtocol, willReconnectAttempt attempt: Int, after delay: TimeInterval) {}
 }
 
 /// A protocol that defines methods for opening, using, and closing a WebSocket connection.
@@ -111,16 +120,48 @@ public final class NZSocket: NSObject {
     /// Session-level behavior such as cellular access and connectivity waiting.
     internal let sessionConfiguration: NetworkSessionConfiguration
 
+    /// Governs automatic reconnection after the connection drops unexpectedly.
+    internal let reconnectPolicy: NZSocketReconnectPolicy
+
+    /// How often to automatically send a ping while connected. `nil` (default) disables the
+    /// built-in heartbeat scheduler.
+    internal let heartbeatInterval: TimeInterval?
+
+    /// The path/protocols last passed to `connect(to:protocols:)`, used to reconnect.
+    internal var lastPath: Path?
+    internal var lastProtocols: [String] = []
+
+    /// `true` once `disconnect()` has been called explicitly, suppressing auto-reconnect.
+    internal var isExplicitDisconnect = false
+
+    /// The number of reconnect attempts made since the last successful connection.
+    internal var reconnectAttempt = 0
+
+    /// The task periodically sending pings while connected, if `heartbeatInterval` is set.
+    internal var heartbeatTask: Task<Void, Never>?
+
     /// Initializes a new instance of NZSocket.
     ///
     /// - Parameters:
     ///   - baseURL: The base URL used for constructing the connection URL.
     ///   - timeout: The timeout interval used while establishing the connection (default is 10 seconds).
     ///   - sessionConfiguration: Session-level behavior such as cellular access and connectivity waiting.
-    public init(baseURL: String, timeout: TimeInterval = 10, sessionConfiguration: NetworkSessionConfiguration = NetworkSessionConfiguration(cachePolicy: .useProtocolCachePolicy)) {
+    ///   - reconnectPolicy: Governs automatic reconnection after the connection drops unexpectedly.
+    ///     Defaults to `.none` (no auto-reconnect).
+    ///   - heartbeatInterval: How often to automatically send a ping while connected. `nil`
+    ///     (default) disables the built-in heartbeat scheduler.
+    public init(
+        baseURL: String,
+        timeout: TimeInterval = 10,
+        sessionConfiguration: NetworkSessionConfiguration = NetworkSessionConfiguration(cachePolicy: .useProtocolCachePolicy),
+        reconnectPolicy: NZSocketReconnectPolicy = .none,
+        heartbeatInterval: TimeInterval? = nil
+    ) {
         self.baseURL = baseURL
         self.timeout = timeout
         self.sessionConfiguration = sessionConfiguration
+        self.reconnectPolicy = reconnectPolicy
+        self.heartbeatInterval = heartbeatInterval
         super.init()
     }
 

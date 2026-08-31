@@ -9,6 +9,8 @@ extension NZSocket: URLSessionWebSocketDelegate {
     ///   - protocol: The protocol picked by the server out of the offered `protocols`, if any.
     public func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didOpenWithProtocol protocol: String?) {
         isConnected = true
+        reconnectAttempt = 0
+        startHeartbeatIfNeeded()
         delegate?.socket(self, didConnectWithProtocol: `protocol`)
     }
 
@@ -20,8 +22,9 @@ extension NZSocket: URLSessionWebSocketDelegate {
     ///   - reason: An optional reason payload sent by the server.
     public func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didCloseWith closeCode: URLSessionWebSocketTask.CloseCode, reason: Data?) {
         isConnected = false
-        messageContinuation?.finish()
+        stopHeartbeat()
         delegate?.socket(self, didDisconnectWithCode: closeCode, reason: reason)
+        handleUnexpectedDisconnect(error: nil)
     }
 
     /// Forwards session-wide authentication challenges (SSL pinning, client certificates,
