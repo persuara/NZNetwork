@@ -232,6 +232,9 @@ public class NZDownloader: NSObject {
     /// callbacks for the background session have been delivered.
     public var backgroundCompletionHandler: (() -> Void)?
 
+    /// Session-level behavior such as cellular access and connectivity waiting.
+    internal let sessionConfiguration: NetworkSessionConfiguration
+
     /// Initializes a new instance of NZDownloader.
     ///
     /// - Parameters:
@@ -241,10 +244,14 @@ public class NZDownloader: NSObject {
     ///     `URLSession` so uploads/downloads can continue while the app is suspended or
     ///     terminated. Must be unique per app and stable across launches (default is `nil`,
     ///     meaning a regular foreground session is used).
-    public init(baseURL: String, timeout: TimeInterval = 10, backgroundSessionIdentifier: String? = nil) {
+    ///   - sessionConfiguration: Session-level behavior such as cellular access and connectivity waiting.
+    ///     Defaults to `.useProtocolCachePolicy` caching (this class's historical behavior), unlike
+    ///     `Network`'s `.default`, which disables caching.
+    public init(baseURL: String, timeout: TimeInterval = 10, backgroundSessionIdentifier: String? = nil, sessionConfiguration: NetworkSessionConfiguration = NetworkSessionConfiguration(cachePolicy: .useProtocolCachePolicy)) {
         self.baseURL = baseURL
         self.timeout = timeout
         self.backgroundSessionIdentifier = backgroundSessionIdentifier
+        self.sessionConfiguration = sessionConfiguration
 
         super.init()
     }
@@ -257,11 +264,14 @@ public class NZDownloader: NSObject {
 
     /// The URLSessionConfiguration used for configuring the session.
     private lazy var configuration: URLSessionConfiguration = {
-        guard let backgroundSessionIdentifier else {
-            return .default
+        let configuration: URLSessionConfiguration
+        if let backgroundSessionIdentifier {
+            configuration = URLSessionConfiguration.background(withIdentifier: backgroundSessionIdentifier)
+            configuration.sessionSendsLaunchEvents = true
+        } else {
+            configuration = .default
         }
-        let configuration = URLSessionConfiguration.background(withIdentifier: backgroundSessionIdentifier)
-        configuration.sessionSendsLaunchEvents = true
+        sessionConfiguration.apply(to: configuration)
         return configuration
     }()
 }

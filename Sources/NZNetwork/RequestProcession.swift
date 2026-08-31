@@ -23,7 +23,7 @@ extension Network {
         headers = interceptor.setupingInitialHeaders(headers, boundary: boundary)
         
         // Create the initial request to be intercepted
-        let requestToBeIntercepted = InterceptorRequest(url: url, method: method, headers: headers, timeout: path.timeout ?? interceptor.timeout, body: body, multiparts: multiparts)
+        let requestToBeIntercepted = InterceptorRequest(url: url, method: method, headers: headers, timeout: path.timeout ?? interceptor.timeout, cachePolicy: path.cachePolicy ?? sessionConfiguration.cachePolicy, body: body, multiparts: multiparts)
         
         // Intercept the request
         let interceptedRequest = await interceptor.intercept(request: requestToBeIntercepted)
@@ -34,7 +34,7 @@ extension Network {
     internal func createDataTask(with request: InterceptorRequest, attempt: Int = 1) async -> NetworkResult {
 
         do {
-            let dataAndResponse = try await createDataTask(url: request.url, headers: request.headers, timeout: request.timeout, method: request.method)
+            let dataAndResponse = try await createDataTask(url: request.url, headers: request.headers, timeout: request.timeout, cachePolicy: request.cachePolicy, method: request.method)
             
             let data = dataAndResponse.0
             let dataTaskResponse = dataAndResponse.1

@@ -31,6 +31,7 @@ extension Network {
             method: method,
             headers: headers,
             timeout: path.timeout ?? interceptor.timeout,
+            cachePolicy: path.cachePolicy ?? sessionConfiguration.cachePolicy,
             body: body,
             multiparts: multiparts
         )
@@ -45,7 +46,7 @@ extension Network {
 
         let dataAndResponse: (Data, URLResponse)
         do {
-            dataAndResponse = try await createDataTask(url: request.url, headers: request.headers, timeout: request.timeout, method: request.method)
+            dataAndResponse = try await createDataTask(url: request.url, headers: request.headers, timeout: request.timeout, cachePolicy: request.cachePolicy, method: request.method)
         } catch {
             throw error.isCancellationError ? CancellationError() : error
         }

@@ -177,10 +177,14 @@ public struct Path {
     /// Overrides the interceptor's default `timeout` for this specific request, if provided.
     public let timeout: TimeInterval?
 
-    public init(route: String, queryItems: [URLQueryItem]?, timeout: TimeInterval? = nil) {
+    /// Overrides `Network`'s session-wide cache policy for this specific request, if provided.
+    public let cachePolicy: URLRequest.CachePolicy?
+
+    public init(route: String, queryItems: [URLQueryItem]?, timeout: TimeInterval? = nil, cachePolicy: URLRequest.CachePolicy? = nil) {
         self.route = route
         self.queryItems = queryItems
         self.timeout = timeout
+        self.cachePolicy = cachePolicy
     }
 }
 
@@ -211,27 +215,30 @@ public enum NetworkResult {
 
 public class Network: NetworkProtocol {
 
-       
     internal let interceptor: InterceptorProtocol
 
     /// Governs automatic retries for requests that fail with a retryable HTTP status code.
     internal let retryPolicy: RetryPolicy
 
-    public init(interceptor: InterceptorProtocol, retryPolicy: RetryPolicy = .none) {
+    /// Session-level behavior such as caching, cellular access, and connectivity waiting.
+    internal let sessionConfiguration: NetworkSessionConfiguration
+
+    public init(interceptor: InterceptorProtocol, retryPolicy: RetryPolicy = .none, sessionConfiguration: NetworkSessionConfiguration = .default) {
         self.interceptor = interceptor
         self.retryPolicy = retryPolicy
+        self.sessionConfiguration = sessionConfiguration
     }
-    
+
     // MARK: - SESSION
     internal lazy var session: URLSession = {
         let configuration = configuration
         let session = URLSession(configuration: configuration, delegate: nil, delegateQueue: nil)
         return session
     }()
-    
+
     private lazy var configuration: URLSessionConfiguration = {
         let configuration = URLSessionConfiguration.default
-        configuration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        sessionConfiguration.apply(to: configuration)
         return configuration
     }()
     

@@ -98,20 +98,27 @@ public final class NZSocket: NSObject {
     /// `true` while a WebSocket connection is open.
     public internal(set) var isConnected: Bool = false
 
+    /// Session-level behavior such as cellular access and connectivity waiting.
+    internal let sessionConfiguration: NetworkSessionConfiguration
+
     /// Initializes a new instance of NZSocket.
     ///
     /// - Parameters:
     ///   - baseURL: The base URL used for constructing the connection URL.
     ///   - timeout: The timeout interval used while establishing the connection (default is 10 seconds).
-    public init(baseURL: String, timeout: TimeInterval = 10) {
+    ///   - sessionConfiguration: Session-level behavior such as cellular access and connectivity waiting.
+    public init(baseURL: String, timeout: TimeInterval = 10, sessionConfiguration: NetworkSessionConfiguration = NetworkSessionConfiguration(cachePolicy: .useProtocolCachePolicy)) {
         self.baseURL = baseURL
         self.timeout = timeout
+        self.sessionConfiguration = sessionConfiguration
         super.init()
     }
 
     /// The URLSession used for the WebSocket task.
     internal lazy var session: URLSession = {
-        URLSession(configuration: .default, delegate: self, delegateQueue: nil)
+        let configuration = URLSessionConfiguration.default
+        sessionConfiguration.apply(to: configuration)
+        return URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
     }()
 }
 
