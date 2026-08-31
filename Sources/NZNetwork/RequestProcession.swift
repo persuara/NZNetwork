@@ -14,13 +14,16 @@ extension Network {
     ///   - body: An optional `Encodable` payload to be included in the request body.
     ///   - callback: A closure that receives a `NetworkCallback` object containing the response data, error information,
     ///               and additional details. The closure is invoked when the request completes.
-    internal func proceedWithRequest(path: Path, method: Method, body: Encodable?, multiparts: [Part]? = nil, boundary: String? = nil, bodyFileURL: URL? = nil) async -> NetworkResult {
+    internal func proceedWithRequest(path: Path, method: Method, body: Encodable?, multiparts: [Part]? = nil, boundary: String? = nil, contentType: String? = nil, bodyFileURL: URL? = nil) async -> NetworkResult {
         // Construct the URL based on the provided parameters
         let url = URL(baseEndPoint: interceptor.baseURL, route: path.route, queryItems: path.queryItems)
 
         // Initialize headers (Note: You may need to populate headers accordingly)
         var headers = [String: String]()
         headers = interceptor.setupingInitialHeaders(headers, boundary: boundary)
+        if let contentType, boundary == nil {
+            headers["Content-Type"] = contentType
+        }
 
         // Create the initial request to be intercepted
         let requestToBeIntercepted = InterceptorRequest(url: url, method: method, headers: headers, timeout: path.timeout ?? interceptor.timeout, cachePolicy: path.cachePolicy ?? sessionConfiguration.cachePolicy, body: body, multiparts: multiparts, bodyFileURL: bodyFileURL)

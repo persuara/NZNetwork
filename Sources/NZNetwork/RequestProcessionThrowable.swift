@@ -17,13 +17,16 @@ extension Network {
     /// ## Note:
     /// This API was added to provide a throwable version of the `proceedWithRequest` method for improved error handling,
     /// allowing consumers to catch and handle errors using Swift's `throws` mechanism.
-    internal func proceedWithRequest(path: Path, method: Method, body: Encodable?, multiparts: [Part]? = nil, boundary: String? = nil, bodyFileURL: URL? = nil) async throws -> Data {
+    internal func proceedWithRequest(path: Path, method: Method, body: Encodable?, multiparts: [Part]? = nil, boundary: String? = nil, contentType: String? = nil, bodyFileURL: URL? = nil) async throws -> Data {
         // Construct the URL based on the provided parameters
         let url = URL(baseEndPoint: interceptor.baseURL, route: path.route, queryItems: path.queryItems)
 
         // Initialize headers (Note: You may need to populate headers accordingly)
         var headers: [String: String] = [:]
         headers = interceptor.setupingInitialHeaders(headers, boundary: boundary)
+        if let contentType, boundary == nil {
+            headers["Content-Type"] = contentType
+        }
 
         // Create the initial request to be intercepted
         let requestToBeIntercepted = InterceptorRequest(

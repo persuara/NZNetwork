@@ -52,6 +52,15 @@ public protocol NetworkProtocol {
     ///               The closure is invoked when the request completes.
     func patch(path: Path, payload: Encodable) async -> NetworkResult
 
+    /// Perform a POST request with an `application/x-www-form-urlencoded` body.
+    func postForm(path: Path, form: FormBody) async -> NetworkResult
+
+    /// Perform a PUT request with an `application/x-www-form-urlencoded` body.
+    func putForm(path: Path, form: FormBody) async -> NetworkResult
+
+    /// Perform a PATCH request with an `application/x-www-form-urlencoded` body.
+    func patchForm(path: Path, form: FormBody) async -> NetworkResult
+
     /// Perform a HEAD request to the specified path.
     ///
     /// - Parameter path: The API path for the HEAD request.
@@ -127,6 +136,18 @@ public protocol NetworkProtocol {
     /// - Returns: The response data if the request is successful.
     /// - Throws: `NetworkError` if the request fails due to a remote error, local error, or if it is cancelled.
     func patchThrowable(path: Path, payload: Encodable) async throws -> Data
+
+    /// Perform a POST request with an `application/x-www-form-urlencoded` body.
+    /// - Throws: `NetworkError` if the request fails due to a remote error, local error, or if it is cancelled.
+    func postFormThrowable(path: Path, form: FormBody) async throws -> Data
+
+    /// Perform a PUT request with an `application/x-www-form-urlencoded` body.
+    /// - Throws: `NetworkError` if the request fails due to a remote error, local error, or if it is cancelled.
+    func putFormThrowable(path: Path, form: FormBody) async throws -> Data
+
+    /// Perform a PATCH request with an `application/x-www-form-urlencoded` body.
+    /// - Throws: `NetworkError` if the request fails due to a remote error, local error, or if it is cancelled.
+    func patchFormThrowable(path: Path, form: FormBody) async throws -> Data
 
     /// Perform a HEAD request to the specified path.
     ///
@@ -294,6 +315,24 @@ public class Network: NSObject, NetworkProtocol {
             assertionFailure("Network: Error on Encoding PATCH body! error: \(error.localizedDescription)")
             return .localError(error: error as NSError)
         }
+    }
+
+    public func postForm(path: Path, form: FormBody) async -> NetworkResult {
+        let body = form.encoded
+        let method: Network.Method = .post(body: body)
+        return await proceedWithRequest(path: path, method: method, body: nil, contentType: FormBody.contentType)
+    }
+
+    public func putForm(path: Path, form: FormBody) async -> NetworkResult {
+        let body = form.encoded
+        let method: Network.Method = .put(body: body)
+        return await proceedWithRequest(path: path, method: method, body: nil, contentType: FormBody.contentType)
+    }
+
+    public func patchForm(path: Path, form: FormBody) async -> NetworkResult {
+        let body = form.encoded
+        let method: Network.Method = .patch(body: body)
+        return await proceedWithRequest(path: path, method: method, body: nil, contentType: FormBody.contentType)
     }
 
     public func head(path: Path) async -> NetworkResult {

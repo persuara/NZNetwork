@@ -46,6 +46,21 @@ extension Network {
         return try await proceedWithRequest(path: path, method: method, body: payload)
     }
 
+    public func postFormThrowable(path: Path, form: FormBody) async throws -> Data {
+        let method: Network.Method = .post(body: form.encoded)
+        return try await proceedWithRequest(path: path, method: method, body: nil, contentType: FormBody.contentType)
+    }
+
+    public func putFormThrowable(path: Path, form: FormBody) async throws -> Data {
+        let method: Network.Method = .put(body: form.encoded)
+        return try await proceedWithRequest(path: path, method: method, body: nil, contentType: FormBody.contentType)
+    }
+
+    public func patchFormThrowable(path: Path, form: FormBody) async throws -> Data {
+        let method: Network.Method = .patch(body: form.encoded)
+        return try await proceedWithRequest(path: path, method: method, body: nil, contentType: FormBody.contentType)
+    }
+
     public func headThrowable(path: Path) async throws -> Data {
         try await proceedWithRequest(path: path, method: .head, body: nil)
     }
