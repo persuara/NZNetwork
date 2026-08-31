@@ -54,11 +54,15 @@ extension Network {
             }
         }
 
+        logger?.log(request: request)
+
         let dataAndResponse: (Data, URLResponse)
         do {
             dataAndResponse = try await createDataTask(url: request.url, headers: request.headers, timeout: request.timeout, cachePolicy: request.cachePolicy, method: request.method, bodyFileURL: request.bodyFileURL)
         } catch {
-            throw error.isCancellationError ? CancellationError() : error
+            let mappedError = error.isCancellationError ? CancellationError() : error
+            logger?.log(error: mappedError, for: request)
+            throw mappedError
         }
 
         let data = dataAndResponse.0
@@ -90,7 +94,8 @@ extension Network {
         )
         
         let interceptedResponse = try await interceptor.interceptThrowable(response: responseToBeIntercepted)
-        
+        logger?.log(response: interceptedResponse, data: data)
+
         switch interceptedResponse.result {
         case .response(let data):
             guard (200...299).contains(statusCode) else {

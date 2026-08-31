@@ -42,9 +42,11 @@ extension Network {
             }
         }
 
+        logger?.log(request: request)
+
         do {
             let dataAndResponse = try await createDataTask(url: request.url, headers: request.headers, timeout: request.timeout, cachePolicy: request.cachePolicy, method: request.method, bodyFileURL: request.bodyFileURL)
-            
+
             let data = dataAndResponse.0
             let dataTaskResponse = dataAndResponse.1
             
@@ -62,9 +64,10 @@ extension Network {
                 }
             }
             responseToBeIntercepted = InterceptorResponse(request: request, localizedMessageForStatusCode: localizedMessageForStatusCode, statusCode: statusCode, headers: responseHeaders, result: .response(data: data))
-            
+
             let interceptedResponse = await interceptor.intercept(response: responseToBeIntercepted)
-            
+            logger?.log(response: interceptedResponse, data: data)
+
             switch interceptedResponse.result {
             case .response(let data):
                 if (200...299).contains(statusCode) {
@@ -92,6 +95,7 @@ extension Network {
             }
 
             let error = error as NSError
+            logger?.log(error: error, for: request)
             let responseToBeIntercepted = InterceptorResponse(request: request, localizedMessageForStatusCode: "", statusCode: error.code, headers: request.headers, result: .error(error: error))
             let interceptedResponse = await interceptor.intercept(response: responseToBeIntercepted)
             

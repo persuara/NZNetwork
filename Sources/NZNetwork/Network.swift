@@ -244,10 +244,14 @@ public class Network: NSObject, NetworkProtocol {
     /// Session-level behavior such as caching, cellular access, and connectivity waiting.
     internal let sessionConfiguration: NetworkSessionConfiguration
 
-    public init(interceptor: InterceptorProtocol, retryPolicy: RetryPolicy = .none, sessionConfiguration: NetworkSessionConfiguration = .default) {
+    /// Observes every request/response passing through this instance. `nil` (default) logs nothing.
+    internal let logger: NetworkLogger?
+
+    public init(interceptor: InterceptorProtocol, retryPolicy: RetryPolicy = .none, sessionConfiguration: NetworkSessionConfiguration = .default, logger: NetworkLogger? = nil) {
         self.interceptor = interceptor
         self.retryPolicy = retryPolicy
         self.sessionConfiguration = sessionConfiguration
+        self.logger = logger
         super.init()
     }
 
