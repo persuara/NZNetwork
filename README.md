@@ -85,6 +85,23 @@ final class AppInterceptor: InterceptorProtocol {
 - `.close` — cancel the request.
 - `.proceed(request:)` — resend a (possibly modified) request, e.g. after a token refresh.
 
+`InterceptorProtocol` also has a `handle(challenge:)` method for responding to authentication challenges from the underlying `URLSession` — SSL/certificate pinning, client certificate authentication, or Basic/NTLM credentials. The default implementation performs the system's default handling (unchanged behavior if you don't override it):
+
+```swift
+final class AppInterceptor: InterceptorProtocol {
+    // ...
+
+    func handle(challenge: URLAuthenticationChallenge) async -> (URLSession.AuthChallengeDisposition, URLCredential?) {
+        guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
+              let serverTrust = challenge.protectionSpace.serverTrust,
+              isPinnedCertificate(serverTrust) else {
+            return (.performDefaultHandling, nil)
+        }
+        return (.useCredential, URLCredential(trust: serverTrust))
+    }
+}
+```
+
 ### 1.2 Create a `Network` instance
 
 ```swift
@@ -110,6 +127,24 @@ let network = Network(
 ```
 
 No `retryPolicy` argument (or `.none`) disables retries — the default, unchanged behavior. Retries only apply to non-2xx server responses; transport failures (no connection, DNS errors, timeouts) and cancellations are never retried automatically — handle those yourself in the interceptor if you need to.
+
+You can also pass a `NetworkSessionConfiguration` to control session-wide behavior — caching, cellular/expensive-network access, and whether requests wait for connectivity instead of failing immediately:
+
+```swift
+let network = Network(
+    interceptor: AppInterceptor(),
+    sessionConfiguration: NetworkSessionConfiguration(
+        cachePolicy: .useProtocolCachePolicy,   // opt into standard HTTP caching (default: no caching)
+        urlCache: URLCache(memoryCapacity: 20 * 1024 * 1024, diskCapacity: 100 * 1024 * 1024),
+        allowsCellularAccess: true,
+        allowsExpensiveNetworkAccess: true,
+        allowsConstrainedNetworkAccess: true,
+        waitsForConnectivity: true
+    )
+)
+```
+
+Every field has a default matching this framework's historical behavior (no caching, all network types allowed, doesn't wait for connectivity), so omitting `sessionConfiguration` entirely keeps existing code working unchanged. `NetworkSessionConfiguration` is shared by `Network`, `NZDownloader`, and `NZSocket` — same shape, same knobs, wherever you use it.
 
 ### 1.3 Perform requests
 
@@ -159,7 +194,7 @@ do {
 
 Available methods on both APIs: `get`, `post(payload:)`, `put(payload:)`, `patch(payload:)`, `delete`, `delete(body:)`, `head`, `options`, plus `...Throwable` equivalents (`getThrowable`, `postThrowable`, `putThrowable`, `patchThrowable`, `deleteThrowable`, `headThrowable`, `optionsThrowable`).
 
-### 1.4 Per-request timeout
+### 1.4 Per-request timeout and cache policy
 
 `Path` accepts an optional `timeout`, which overrides the interceptor's default `timeout` for just that one request:
 
@@ -167,7 +202,13 @@ Available methods on both APIs: `get`, `post(payload:)`, `put(payload:)`, `patch
 let result = await network.get(path: Path(route: "/slow-endpoint", queryItems: nil, timeout: 60))
 ```
 
-Omit it (the default) to use `interceptor.timeout` as before.
+It also accepts an optional `cachePolicy`, which overrides `Network`'s session-wide cache policy (see §1.2) for just that one request:
+
+```swift
+let result = await network.get(path: Path(route: "/live-price", queryItems: nil, cachePolicy: .reloadIgnoringLocalCacheData))
+```
+
+Omit either (the default) to fall back to the interceptor's timeout / the session's cache policy, as before.
 
 ### 1.5 Cancelling a request
 
@@ -336,7 +377,9 @@ Implement `NZDownloaderUploadDelegate` (adds `didReceiveProgress` for uploads) t
 
 ### 2.4 Session-level events
 
-Set `downloader.delegate` (`NZDownloaderDelegate`) to be notified if the underlying `URLSession` becomes invalid.
+Set `downloader.delegate` (`NZDownloaderDelegate`) to be notified if the underlying `URLSession` becomes invalid, or to handle authentication challenges (SSL pinning, client certificates, Basic/NTLM) via `downloader(_:didReceive:)` — same shape as `InterceptorProtocol.handle(challenge:)` in §1.1, defaulting to the system's default handling if you don't override it.
+
+Pass a `sessionConfiguration: NetworkSessionConfiguration` to `NZDownloader`'s initializer for cellular access, connectivity waiting, etc. — same type used by `Network` (see §1.2). Its default preserves `NZDownloader`'s historical behavior (standard HTTP caching, all network types allowed).
 
 ### 2.5 Background sessions
 
@@ -434,7 +477,9 @@ final class ChatSocketHandler: NZSocketDelegate {
 socket.delegate = ChatSocketHandler()
 ```
 
-Both delegate methods have default no-op implementations, so you only implement what you need. `socket.isConnected` reflects the current connection state at any time.
+All delegate methods have default no-op implementations (or, for `didReceive challenge:`, the system's default handling), so you only implement what you need. `socket.isConnected` reflects the current connection state at any time.
+
+`NZSocket`'s initializer also accepts a `sessionConfiguration: NetworkSessionConfiguration` for cellular access, connectivity waiting, etc. — same type used by `Network`/`NZDownloader` (see §1.2).
 
 ---
 
