@@ -2,7 +2,7 @@ import Foundation
 import Network
 
 /// The kind of network interface currently carrying traffic.
-public enum NZConnectionType {
+public enum NZConnectionType: Sendable {
     case wifi
     case cellular
     case wiredEthernet
@@ -11,7 +11,7 @@ public enum NZConnectionType {
 }
 
 /// A snapshot of the device's network reachability at a point in time.
-public struct NZReachabilityStatus {
+public struct NZReachabilityStatus: Sendable {
     public let isConnected: Bool
     public let connectionType: NZConnectionType
     public let isExpensive: Bool
@@ -73,17 +73,26 @@ public protocol NZReachabilityProtocol: AnyObject {
 
 /// Monitors network reachability using `NWPathMonitor`, exposing the current online/offline
 /// state and connection type via delegate callbacks and/or an `AsyncStream`.
-public final class NZReachability: NZReachabilityProtocol {
+public final class NZReachability: NZReachabilityProtocol, @unchecked Sendable {
 
     weak public var delegate: NZReachabilityDelegate?
 
-    public private(set) var currentStatus: NZReachabilityStatus?
+    /// Lock-protected since it's written from `monitor`'s callback (delivered on `queue`) and
+    /// read from whichever thread calls `currentStatus`/`isConnected`.
+    private let lock = NSLock()
+    private var _currentStatus: NZReachabilityStatus?
+    private var continuation: AsyncStream<NZReachabilityStatus>.Continuation?
+
+    public var currentStatus: NZReachabilityStatus? {
+        lock.lock()
+        defer { lock.unlock() }
+        return _currentStatus
+    }
 
     public var isConnected: Bool { currentStatus?.isConnected ?? true }
 
     private let monitor: NWPathMonitor
     private let queue: DispatchQueue
-    private var continuation: AsyncStream<NZReachabilityStatus>.Continuation?
 
     /// Creates a reachability monitor.
     ///
@@ -104,21 +113,29 @@ public final class NZReachability: NZReachabilityProtocol {
         monitor.pathUpdateHandler = { [weak self] path in
             guard let self else { return }
             let status = NZReachabilityStatus(path: path)
-            self.currentStatus = status
+            self.lock.lock()
+            self._currentStatus = status
+            let continuation = self.continuation
+            self.lock.unlock()
             self.delegate?.reachability(self, didUpdateStatus: status)
-            self.continuation?.yield(status)
+            continuation?.yield(status)
         }
         monitor.start(queue: queue)
     }
 
     public func stop() {
         monitor.cancel()
+        lock.lock()
+        let continuation = continuation
+        lock.unlock()
         continuation?.finish()
     }
 
     public func statusUpdates() -> AsyncStream<NZReachabilityStatus> {
         AsyncStream { continuation in
+            self.lock.lock()
             self.continuation = continuation
+            self.lock.unlock()
         }
     }
 }
