@@ -215,14 +215,21 @@ public struct Path {
 }
 
 /// A class that provides functionality for downloading and uploading tasks.
-public class NZDownloader: NSObject {
-    
+public class NZDownloader: NSObject, @unchecked Sendable {
+
     /// The delegate for the NZDownloader.
     weak public var delegate: NZDownloaderDelegate?
-    
-    /// Dictionary that holds task delegates for handling specific tasks.
-    internal var delegateForHandledTask: [Int: NZDownloaderTaskDelegate] = [:]
-    
+
+    /// Task delegates for handling specific tasks, keyed by task identifier. Lock-protected since
+    /// it's mutated both from whichever thread calls `upload`/`download`, and read from the
+    /// `URLSession`'s own delegate queue — a plain dictionary would otherwise race.
+    private let delegateForHandledTaskBox = Locked<[Int: NZDownloaderTaskDelegate]>([:])
+
+    internal var delegateForHandledTask: [Int: NZDownloaderTaskDelegate] {
+        get { delegateForHandledTaskBox.get() }
+        set { delegateForHandledTaskBox.set(newValue) }
+    }
+
     /// The base URL used for constructing URLs for network requests.
     internal let baseURL: String
     
@@ -244,7 +251,11 @@ public class NZDownloader: NSObject {
     /// Set this from your `UIApplicationDelegate`/`UISceneDelegate` when the app is relaunched to
     /// handle background transfer events; it is called (and cleared) once all queued delegate
     /// callbacks for the background session have been delivered.
-    public var backgroundCompletionHandler: (() -> Void)?
+    public var backgroundCompletionHandler: (() -> Void)? {
+        get { backgroundCompletionHandlerBox.get() }
+        set { backgroundCompletionHandlerBox.set(newValue) }
+    }
+    private let backgroundCompletionHandlerBox = Locked<(() -> Void)?>(nil)
 
     /// Session-level behavior such as cellular access and connectivity waiting.
     internal let sessionConfiguration: NetworkSessionConfiguration
@@ -270,22 +281,24 @@ public class NZDownloader: NSObject {
         super.init()
     }
 
-    /// The URLSession used for network requests.
-    internal lazy var session: URLSession = {
-        let session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
-        return session
-    }()
+    /// The URLSession used for network requests. Lazily created, lock-protected so concurrent
+    /// first access from multiple threads can't race (a plain `lazy var` is not thread-safe).
+    private let sessionBox = Locked<URLSession?>(nil)
 
-    /// The URLSessionConfiguration used for configuring the session.
-    private lazy var configuration: URLSessionConfiguration = {
-        let configuration: URLSessionConfiguration
-        if let backgroundSessionIdentifier {
-            configuration = URLSessionConfiguration.background(withIdentifier: backgroundSessionIdentifier)
-            configuration.sessionSendsLaunchEvents = true
-        } else {
-            configuration = .default
+    internal var session: URLSession {
+        sessionBox.withLock { existing in
+            if let existing { return existing }
+            let configuration: URLSessionConfiguration
+            if let backgroundSessionIdentifier {
+                configuration = URLSessionConfiguration.background(withIdentifier: backgroundSessionIdentifier)
+                configuration.sessionSendsLaunchEvents = true
+            } else {
+                configuration = .default
+            }
+            sessionConfiguration.apply(to: configuration)
+            let newSession = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
+            existing = newSession
+            return newSession
         }
-        sessionConfiguration.apply(to: configuration)
-        return configuration
-    }()
+    }
 }
