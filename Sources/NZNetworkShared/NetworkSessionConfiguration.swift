@@ -4,7 +4,7 @@ import Foundation
 ///
 /// Pass one to their initializers to opt into standard HTTP caching, restrict cellular/expensive
 /// network usage, or make requests wait for connectivity instead of failing immediately.
-public struct NetworkSessionConfiguration {
+public struct NetworkSessionConfiguration: @unchecked Sendable {
 
     /// The cache policy applied to every request unless overridden per-request.
     ///
