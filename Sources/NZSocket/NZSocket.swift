@@ -30,11 +30,21 @@ public protocol NZSocketDelegate: AnyObject {
     ///   - code: The close code sent by the server (or `.invalid` on a local/transport failure).
     ///   - reason: An optional, server-supplied reason for the closure.
     func socket(_ socket: NZSocketProtocol, didDisconnectWithCode code: URLSessionWebSocketTask.CloseCode, reason: Data?)
+
+    /// Handles an authentication challenge presented by the underlying `URLSession` — e.g. for
+    /// SSL/certificate pinning, client certificate authentication, or Basic/NTLM credentials.
+    ///
+    /// - Parameter challenge: The challenge presented by the server.
+    /// - Returns: The disposition to use, and a credential when the disposition requires one.
+    func socket(_ socket: NZSocketProtocol, didReceive challenge: URLAuthenticationChallenge) async -> (URLSession.AuthChallengeDisposition, URLCredential?)
 }
 
 public extension NZSocketDelegate {
     func socket(_ socket: NZSocketProtocol, didConnectWithProtocol protocol: String?) {}
     func socket(_ socket: NZSocketProtocol, didDisconnectWithCode code: URLSessionWebSocketTask.CloseCode, reason: Data?) {}
+    func socket(_ socket: NZSocketProtocol, didReceive challenge: URLAuthenticationChallenge) async -> (URLSession.AuthChallengeDisposition, URLCredential?) {
+        (.performDefaultHandling, nil)
+    }
 }
 
 /// A protocol that defines methods for opening, using, and closing a WebSocket connection.
@@ -98,20 +108,27 @@ public final class NZSocket: NSObject {
     /// `true` while a WebSocket connection is open.
     public internal(set) var isConnected: Bool = false
 
+    /// Session-level behavior such as cellular access and connectivity waiting.
+    internal let sessionConfiguration: NetworkSessionConfiguration
+
     /// Initializes a new instance of NZSocket.
     ///
     /// - Parameters:
     ///   - baseURL: The base URL used for constructing the connection URL.
     ///   - timeout: The timeout interval used while establishing the connection (default is 10 seconds).
-    public init(baseURL: String, timeout: TimeInterval = 10) {
+    ///   - sessionConfiguration: Session-level behavior such as cellular access and connectivity waiting.
+    public init(baseURL: String, timeout: TimeInterval = 10, sessionConfiguration: NetworkSessionConfiguration = NetworkSessionConfiguration(cachePolicy: .useProtocolCachePolicy)) {
         self.baseURL = baseURL
         self.timeout = timeout
+        self.sessionConfiguration = sessionConfiguration
         super.init()
     }
 
     /// The URLSession used for the WebSocket task.
     internal lazy var session: URLSession = {
-        URLSession(configuration: .default, delegate: self, delegateQueue: nil)
+        let configuration = URLSessionConfiguration.default
+        sessionConfiguration.apply(to: configuration)
+        return URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
     }()
 }
 

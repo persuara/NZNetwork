@@ -31,7 +31,7 @@ import NZSocket
 
 | Module | Purpose |
 |---|---|
-| `NZNetwork` | GET/POST/PUT/DELETE requests, multipart bodies, request/response interception, error handling |
+| `NZNetwork` | GET/POST/PUT/PATCH/DELETE/HEAD/OPTIONS requests, multipart bodies, request/response interception, retries, cancellation, error handling |
 | `NZDownload` | Background-friendly file downloads and uploads with progress/pause/resume/cancel |
 | `NZSocket` | WebSocket connections with an `async` message stream and connect/disconnect delegate events |
 | `NZNetworkShared` | Internal helpers (`URL`/`URLRequest`/`Data` extensions) shared by all modules |
@@ -85,6 +85,23 @@ final class AppInterceptor: InterceptorProtocol {
 - `.close` — cancel the request.
 - `.proceed(request:)` — resend a (possibly modified) request, e.g. after a token refresh.
 
+`InterceptorProtocol` also has a `handle(challenge:)` method for responding to authentication challenges from the underlying `URLSession` — SSL/certificate pinning, client certificate authentication, or Basic/NTLM credentials. The default implementation performs the system's default handling (unchanged behavior if you don't override it):
+
+```swift
+final class AppInterceptor: InterceptorProtocol {
+    // ...
+
+    func handle(challenge: URLAuthenticationChallenge) async -> (URLSession.AuthChallengeDisposition, URLCredential?) {
+        guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
+              let serverTrust = challenge.protectionSpace.serverTrust,
+              isPinnedCertificate(serverTrust) else {
+            return (.performDefaultHandling, nil)
+        }
+        return (.useCredential, URLCredential(trust: serverTrust))
+    }
+}
+```
+
 ### 1.2 Create a `Network` instance
 
 ```swift
@@ -92,6 +109,42 @@ let network = Network(interceptor: AppInterceptor())
 ```
 
 Keep it around (e.g. as a singleton or injected dependency) — it owns the underlying `URLSession`.
+
+Optionally, pass a `RetryPolicy` to automatically retry requests that come back with a retryable status code (`429`, `500`, `502`, `503`, `504` by default), using exponential backoff:
+
+```swift
+let network = Network(interceptor: AppInterceptor(), retryPolicy: RetryPolicy(maxAttempts: 3))
+
+// Fully customized:
+let network = Network(
+    interceptor: AppInterceptor(),
+    retryPolicy: RetryPolicy(
+        maxAttempts: 4,
+        retryableStatusCodes: [429, 503],
+        backoff: { attempt in Double(attempt) * 0.5 }   // 0.5s, 1s, 1.5s, ...
+    )
+)
+```
+
+No `retryPolicy` argument (or `.none`) disables retries — the default, unchanged behavior. Retries only apply to non-2xx server responses; transport failures (no connection, DNS errors, timeouts) and cancellations are never retried automatically — handle those yourself in the interceptor if you need to.
+
+You can also pass a `NetworkSessionConfiguration` to control session-wide behavior — caching, cellular/expensive-network access, and whether requests wait for connectivity instead of failing immediately:
+
+```swift
+let network = Network(
+    interceptor: AppInterceptor(),
+    sessionConfiguration: NetworkSessionConfiguration(
+        cachePolicy: .useProtocolCachePolicy,   // opt into standard HTTP caching (default: no caching)
+        urlCache: URLCache(memoryCapacity: 20 * 1024 * 1024, diskCapacity: 100 * 1024 * 1024),
+        allowsCellularAccess: true,
+        allowsExpensiveNetworkAccess: true,
+        allowsConstrainedNetworkAccess: true,
+        waitsForConnectivity: true
+    )
+)
+```
+
+Every field has a default matching this framework's historical behavior (no caching, all network types allowed, doesn't wait for connectivity), so omitting `sessionConfiguration` entirely keeps existing code working unchanged. `NetworkSessionConfiguration` is shared by `Network`, `NZDownloader`, and `NZSocket` — same shape, same knobs, wherever you use it.
 
 ### 1.3 Perform requests
 
@@ -139,9 +192,77 @@ do {
 }
 ```
 
-Available methods on both APIs: `get`, `post(payload:)`, `put(payload:)`, `delete`, `delete(body:)`, plus `...Throwable` equivalents (`getThrowable`, `postThrowable`, `putThrowable`, `deleteThrowable`).
+Available methods on both APIs: `get`, `post(payload:)`, `put(payload:)`, `patch(payload:)`, `delete`, `delete(body:)`, `head`, `options`, plus `...Throwable` equivalents (`getThrowable`, `postThrowable`, `putThrowable`, `patchThrowable`, `deleteThrowable`, `headThrowable`, `optionsThrowable`).
 
-### 1.4 Multipart requests
+### 1.4 Per-request timeout and cache policy
+
+`Path` accepts an optional `timeout`, which overrides the interceptor's default `timeout` for just that one request:
+
+```swift
+let result = await network.get(path: Path(route: "/slow-endpoint", queryItems: nil, timeout: 60))
+```
+
+It also accepts an optional `cachePolicy`, which overrides `Network`'s session-wide cache policy (see §1.2) for just that one request:
+
+```swift
+let result = await network.get(path: Path(route: "/live-price", queryItems: nil, cachePolicy: .reloadIgnoringLocalCacheData))
+```
+
+Omit either (the default) to fall back to the interceptor's timeout / the session's cache policy, as before.
+
+### 1.5 Cancelling a request
+
+There are two ways to cancel a request.
+
+**Wrap it in a `Task`** — every `Network` method is `async`, so the idiomatic Swift concurrency approach is to cancel the enclosing `Task`; cancellation propagates straight through to the underlying `URLSessionTask`:
+
+```swift
+let task = Task {
+    await network.get(path: Path(route: "/users", queryItems: nil))
+}
+
+// later, e.g. when the user navigates away
+task.cancel()
+
+let result = await task.value
+if case .cancelled = result {
+    // the request never completed
+}
+```
+
+The throwing API surfaces the same event as a `CancellationError` instead:
+
+```swift
+let task = Task {
+    try await network.getThrowable(path: Path(route: "/users", queryItems: nil))
+}
+task.cancel()
+
+do {
+    _ = try await task.value
+} catch is CancellationError {
+    // the request never completed
+}
+```
+
+**Or use the `...Cancellable` handle API** if you'd rather not manage your own `Task`. It returns a `NetworkTask` handle immediately, so you can hold onto it (e.g. as a property) and cancel it from anywhere, then await the result separately:
+
+```swift
+let request = network.getCancellable(path: Path(route: "/users", queryItems: nil))
+self.currentRequest = request   // hang onto it so you can cancel later
+
+Task {
+    let result = await request.result
+    // ...
+}
+
+// later:
+self.currentRequest?.cancel()
+```
+
+Also available: `postCancellable(path:payload:)`, `putCancellable(path:payload:)`, `patchCancellable(path:payload:)`, `deleteCancellable(path:)`, `deleteCancellable(path:body:)`.
+
+### 1.6 Multipart requests
 
 Define your form fields by conforming to `Part`:
 
@@ -179,7 +300,7 @@ let data = try await network.postThrowable(path: Path(route: "/profile", queryIt
 
 The framework builds the `multipart/form-data` body and `Content-Type` boundary header for you.
 
-### 1.5 `MIMEType`
+### 1.7 `MIMEType`
 
 A typed representation of common MIME types, used for multipart parts:
 
@@ -256,7 +377,38 @@ Implement `NZDownloaderUploadDelegate` (adds `didReceiveProgress` for uploads) t
 
 ### 2.4 Session-level events
 
-Set `downloader.delegate` (`NZDownloaderDelegate`) to be notified if the underlying `URLSession` becomes invalid.
+Set `downloader.delegate` (`NZDownloaderDelegate`) to be notified if the underlying `URLSession` becomes invalid, or to handle authentication challenges (SSL pinning, client certificates, Basic/NTLM) via `downloader(_:didReceive:)` — same shape as `InterceptorProtocol.handle(challenge:)` in §1.1, defaulting to the system's default handling if you don't override it.
+
+Pass a `sessionConfiguration: NetworkSessionConfiguration` to `NZDownloader`'s initializer for cellular access, connectivity waiting, etc. — same type used by `Network` (see §1.2). Its default preserves `NZDownloader`'s historical behavior (standard HTTP caching, all network types allowed).
+
+### 2.5 Background sessions
+
+Pass a `backgroundSessionIdentifier` to run transfers on a background `URLSession`, so downloads and uploads keep going while your app is suspended or terminated, and the system relaunches it to deliver progress/completion events:
+
+```swift
+let downloader = NZDownloader(
+    baseURL: "api.example.com",
+    timeout: 30,
+    backgroundSessionIdentifier: "com.yourapp.downloader.background"
+)
+```
+
+The identifier must be unique to your app and stable across launches. Everything from §2.2–2.3 works unchanged — `download`/`upload` still return a task identifier, and delegate callbacks still fire the same way. One difference: background sessions can't upload an in-memory `Data` blob directly (only file-backed uploads and downloads are supported), so `upload(from data:to:delegate:)` transparently writes the data to a temporary file first when `downloader.isBackgroundSession` is `true` — you don't need to do anything differently.
+
+Wire the app back up to the session in your `UIApplicationDelegate`:
+
+```swift
+func application(
+    _ application: UIApplication,
+    handleEventsForBackgroundURLSession identifier: String,
+    completionHandler: @escaping () -> Void
+) {
+    // `downloader` must be the same instance (same backgroundSessionIdentifier) used to start the transfer.
+    downloader.backgroundCompletionHandler = completionHandler
+}
+```
+
+`NZDownloader` calls that stored handler for you once the session has finished replaying all of its queued events.
 
 ---
 
@@ -325,7 +477,9 @@ final class ChatSocketHandler: NZSocketDelegate {
 socket.delegate = ChatSocketHandler()
 ```
 
-Both delegate methods have default no-op implementations, so you only implement what you need. `socket.isConnected` reflects the current connection state at any time.
+All delegate methods have default no-op implementations (or, for `didReceive challenge:`, the system's default handling), so you only implement what you need. `socket.isConnected` reflects the current connection state at any time.
+
+`NZSocket`'s initializer also accepts a `sessionConfiguration: NetworkSessionConfiguration` for cellular access, connectivity waiting, etc. — same type used by `Network`/`NZDownloader` (see §1.2).
 
 ---
 

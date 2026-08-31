@@ -42,6 +42,26 @@ public protocol NetworkProtocol {
     
     func put(path: Path, multiparts payload: [Part]) async -> NetworkResult
 
+    /// Perform a PATCH request to the specified path with payload data.
+    ///
+    /// - Parameters:
+    ///   - path: The API path for the PATCH request.
+    ///   - payload: The payload data to include in the request body.
+    ///   - callback: A closure that receives a `NetworkCallback` object containing
+    ///               the response data, error information, and additional details.
+    ///               The closure is invoked when the request completes.
+    func patch(path: Path, payload: Encodable) async -> NetworkResult
+
+    /// Perform a HEAD request to the specified path.
+    ///
+    /// - Parameter path: The API path for the HEAD request.
+    func head(path: Path) async -> NetworkResult
+
+    /// Perform an OPTIONS request to the specified path.
+    ///
+    /// - Parameter path: The API path for the OPTIONS request.
+    func options(path: Path) async -> NetworkResult
+
     /// Perform a DELETE request to the specified path.
     ///
     /// - Parameters:
@@ -98,7 +118,30 @@ public protocol NetworkProtocol {
     /// - Returns: The response data if the request is successful.
     /// - Throws: `NetworkError` if the request fails due to a remote error, local error, or if it is cancelled.
     func putThrowable(path: Path, multipart payload: Part...) async throws -> Data
-    
+
+    /// Perform a PATCH request to the specified path with payload data.
+    ///
+    /// - Parameters:
+    ///   - path: The API path for the PATCH request.
+    ///   - payload: The payload data to include in the request body.
+    /// - Returns: The response data if the request is successful.
+    /// - Throws: `NetworkError` if the request fails due to a remote error, local error, or if it is cancelled.
+    func patchThrowable(path: Path, payload: Encodable) async throws -> Data
+
+    /// Perform a HEAD request to the specified path.
+    ///
+    /// - Parameter path: The API path for the HEAD request.
+    /// - Returns: The response data if the request is successful.
+    /// - Throws: `NetworkError` if the request fails due to a remote error, local error, or if it is cancelled.
+    func headThrowable(path: Path) async throws -> Data
+
+    /// Perform an OPTIONS request to the specified path.
+    ///
+    /// - Parameter path: The API path for the OPTIONS request.
+    /// - Returns: The response data if the request is successful.
+    /// - Throws: `NetworkError` if the request fails due to a remote error, local error, or if it is cancelled.
+    func optionsThrowable(path: Path) async throws -> Data
+
     /// Perform a DELETE request to the specified path.
     ///
     /// - Parameter path: The API path for the DELETE request.
@@ -130,10 +173,18 @@ public struct Path {
     ///
     /// Example: [URLQueryItem(name: "id", value: "1")]
     public let queryItems: [URLQueryItem]?
-    
-    public init(route: String, queryItems: [URLQueryItem]?) {
+
+    /// Overrides the interceptor's default `timeout` for this specific request, if provided.
+    public let timeout: TimeInterval?
+
+    /// Overrides `Network`'s session-wide cache policy for this specific request, if provided.
+    public let cachePolicy: URLRequest.CachePolicy?
+
+    public init(route: String, queryItems: [URLQueryItem]?, timeout: TimeInterval? = nil, cachePolicy: URLRequest.CachePolicy? = nil) {
         self.route = route
         self.queryItems = queryItems
+        self.timeout = timeout
+        self.cachePolicy = cachePolicy
     }
 }
 
@@ -162,25 +213,33 @@ public enum NetworkResult {
     case cancelled
 }
 
-public class Network: NetworkProtocol {
+public class Network: NSObject, NetworkProtocol {
 
-       
     internal let interceptor: InterceptorProtocol
-    
-    public init(interceptor: InterceptorProtocol) {
+
+    /// Governs automatic retries for requests that fail with a retryable HTTP status code.
+    internal let retryPolicy: RetryPolicy
+
+    /// Session-level behavior such as caching, cellular access, and connectivity waiting.
+    internal let sessionConfiguration: NetworkSessionConfiguration
+
+    public init(interceptor: InterceptorProtocol, retryPolicy: RetryPolicy = .none, sessionConfiguration: NetworkSessionConfiguration = .default) {
         self.interceptor = interceptor
+        self.retryPolicy = retryPolicy
+        self.sessionConfiguration = sessionConfiguration
+        super.init()
     }
-    
+
     // MARK: - SESSION
     internal lazy var session: URLSession = {
         let configuration = configuration
-        let session = URLSession(configuration: configuration, delegate: nil, delegateQueue: nil)
+        let session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
         return session
     }()
-    
+
     private lazy var configuration: URLSessionConfiguration = {
         let configuration = URLSessionConfiguration.default
-        configuration.requestCachePolicy = .reloadIgnoringLocalAndRemoteCacheData
+        sessionConfiguration.apply(to: configuration)
         return configuration
     }()
     
@@ -235,6 +294,25 @@ public class Network: NetworkProtocol {
         return await proceedWithRequest(path: path, method: method, body: body, multiparts: payload, boundary: boundary)
     }
     
+    public func patch(path: Path, payload: Encodable) async -> NetworkResult {
+        do {
+            let requestBody = try JSONEncoder().encode(payload)
+            let method: Network.Method = .patch(body: requestBody)
+            return await proceedWithRequest(path: path, method: method, body: payload)
+        } catch let error {
+            assertionFailure("Network: Error on Encoding PATCH body! error: \(error.localizedDescription)")
+            return .localError(error: error as NSError)
+        }
+    }
+
+    public func head(path: Path) async -> NetworkResult {
+        await proceedWithRequest(path: path, method: .head, body: nil)
+    }
+
+    public func options(path: Path) async -> NetworkResult {
+        await proceedWithRequest(path: path, method: .options, body: nil)
+    }
+
     public func delete(path: Path) async -> NetworkResult {
         let method: Network.Method = .delete(body: nil)
         return await proceedWithRequest(path: path, method: method, body: nil)

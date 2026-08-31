@@ -11,9 +11,9 @@ internal extension Network {
     ///   - url: The URL to be used in the URLRequest.
     ///   - timeout: The timeout interval for the URLRequest.
     /// - Returns: A newly created URLRequest instance.
-    func createRequest(url: URL, timeout: TimeInterval) -> URLRequest {
-        // Create a URLRequest with the given URL, using the session's cache policy and timeout interval
-        let request = URLRequest(url: url, cachePolicy: session.configuration.requestCachePolicy, timeoutInterval: timeout)
+    func createRequest(url: URL, timeout: TimeInterval, cachePolicy: URLRequest.CachePolicy) -> URLRequest {
+        // Create a URLRequest with the given URL, cache policy, and timeout interval
+        let request = URLRequest(url: url, cachePolicy: cachePolicy, timeoutInterval: timeout)
         return request
     }
 }

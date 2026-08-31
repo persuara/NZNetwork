@@ -4,7 +4,19 @@ import NZNetworkShared
 extension NZDownloader {
     
     internal func proceedUploadDataTask(from dataBytes: Data, to path: Path, _ delegate: NZDownloaderUploadDelegate?) -> Int {
-        
+
+        // Background sessions only support upload tasks backed by a file, not an in-memory
+        // Data blob, so transparently spill it to a temporary file and upload that instead.
+        if isBackgroundSession {
+            let temporaryFileURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+            do {
+                try dataBytes.write(to: temporaryFileURL, options: .atomic)
+            } catch {
+                assertionFailure("NZDownload: Failed writing in-memory data to a temporary file for a background upload. error: \(error.localizedDescription)")
+            }
+            return proceedUploadDataTask(from: temporaryFileURL, to: path, delegate)
+        }
+
         let request = createRequestForTask(with: path)
         let uploadTask: URLSessionUploadTask = session.uploadTask(with: request, from: dataBytes)
         

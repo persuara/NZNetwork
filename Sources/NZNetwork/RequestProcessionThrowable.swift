@@ -30,7 +30,8 @@ extension Network {
             url: url,
             method: method,
             headers: headers,
-            timeout: interceptor.timeout,
+            timeout: path.timeout ?? interceptor.timeout,
+            cachePolicy: path.cachePolicy ?? sessionConfiguration.cachePolicy,
             body: body,
             multiparts: multiparts
         )
@@ -41,10 +42,15 @@ extension Network {
         return try await createDataTask(with: interceptedRequest)
     }
     
-    internal func createDataTask(with request: InterceptorRequest) async throws -> Data {
-        
-        let dataAndResponse = try await createDataTask(url: request.url, headers: request.headers, timeout: request.timeout, method: request.method)
-        
+    internal func createDataTask(with request: InterceptorRequest, attempt: Int = 1) async throws -> Data {
+
+        let dataAndResponse: (Data, URLResponse)
+        do {
+            dataAndResponse = try await createDataTask(url: request.url, headers: request.headers, timeout: request.timeout, cachePolicy: request.cachePolicy, method: request.method)
+        } catch {
+            throw error.isCancellationError ? CancellationError() : error
+        }
+
         let data = dataAndResponse.0
         let response = dataAndResponse.1
         
@@ -78,6 +84,10 @@ extension Network {
         switch interceptedResponse.result {
         case .response(let data):
             guard (200...299).contains(statusCode) else {
+                if let delay = retryPolicy.delayBeforeRetrying(statusCode: statusCode, attempt: attempt) {
+                    try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                    return try await createDataTask(with: request, attempt: attempt + 1)
+                }
                 throw NetworkError.remoteError(data)
             }
             return data
@@ -88,7 +98,7 @@ extension Network {
                 NSError(domain: "Request closed", code: 0, userInfo: nil)
             )
         case .proceed(let request):
-            return try await createDataTask(with: request)
+            return try await createDataTask(with: request, attempt: attempt)
         }
     }
 }

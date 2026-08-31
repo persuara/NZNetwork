@@ -13,13 +13,16 @@ public struct InterceptorRequest {
     
     /// The timeout interval for the network request.
     public var timeout: TimeInterval
-    
+
+    /// The cache policy for the network request.
+    public var cachePolicy: URLRequest.CachePolicy
+
     /// An optional `Encodable` payload to be included in the request body.
     public var body: Encodable?
-    
+
     /// An array of `Part` objects representing the form data parts.
     public var multiparts: [Part]?
-    
+
     /// Creates a new `InterceptorRequest` instance.
     ///
     /// - Parameters:
@@ -27,13 +30,15 @@ public struct InterceptorRequest {
     ///   - method: The HTTP method for the network request.
     ///   - headers: The headers to be included in the network request.
     ///   - timeout: The timeout interval for the network request.
+    ///   - cachePolicy: The cache policy for the network request.
     ///   - body: An optional `Encodable` payload to be included in the request body.
     ///   - multiparts: An optional array of `Part` objects representing the form data parts.
-    public init(url: URL, method: Network.Method, headers: [String : String], timeout: TimeInterval, body: Encodable? = nil, multiparts: [Part]?) {
+    public init(url: URL, method: Network.Method, headers: [String : String], timeout: TimeInterval, cachePolicy: URLRequest.CachePolicy = .reloadIgnoringLocalAndRemoteCacheData, body: Encodable? = nil, multiparts: [Part]?) {
         self.url = url
         self.method = method
         self.headers = headers
         self.timeout = timeout
+        self.cachePolicy = cachePolicy
         self.body = body
         self.multiparts = multiparts
     }

@@ -16,9 +16,9 @@ internal extension Network {
     ///   - method: The HTTP method for the network request.
     /// - Returns: A tuple containing the retrieved `Data` and the `URLResponse`.
     /// - Throws: An error if there's a problem during the asynchronous data task execution.
-    func createDataTask(url: URL, headers: [String: String], timeout: TimeInterval, method: Method) async throws -> (Data, URLResponse) {
-        // Create the initial request with the given URL and timeout
-        var request = createRequest(url: url, timeout: timeout)
+    func createDataTask(url: URL, headers: [String: String], timeout: TimeInterval, cachePolicy: URLRequest.CachePolicy, method: Method) async throws -> (Data, URLResponse) {
+        // Create the initial request with the given URL, cache policy, and timeout
+        var request = createRequest(url: url, timeout: timeout, cachePolicy: cachePolicy)
         request.setHeaders(headers)
         
         // Configure the request based on the specified HTTP method
@@ -31,6 +31,12 @@ internal extension Network {
             request.asPost(body: body)
         case .put(let body):
             request.asPut(body: body)
+        case .patch(let body):
+            request.asPatch(body: body)
+        case .head:
+            request.asHead()
+        case .options:
+            request.asOptions()
         }
         
         // Perform the asynchronous data task and return the result
