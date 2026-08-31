@@ -23,6 +23,11 @@ public struct InterceptorRequest {
     /// An array of `Part` objects representing the form data parts.
     public var multiparts: [Part]?
 
+    /// The URL of a temporary file to stream the request body from, if the body was built as a
+    /// file rather than held in memory (e.g. large multipart uploads). When set, this takes
+    /// precedence over any body carried by `method`'s associated `Data`.
+    public var bodyFileURL: URL?
+
     /// Creates a new `InterceptorRequest` instance.
     ///
     /// - Parameters:
@@ -33,7 +38,8 @@ public struct InterceptorRequest {
     ///   - cachePolicy: The cache policy for the network request.
     ///   - body: An optional `Encodable` payload to be included in the request body.
     ///   - multiparts: An optional array of `Part` objects representing the form data parts.
-    public init(url: URL, method: Network.Method, headers: [String : String], timeout: TimeInterval, cachePolicy: URLRequest.CachePolicy = .reloadIgnoringLocalAndRemoteCacheData, body: Encodable? = nil, multiparts: [Part]?) {
+    ///   - bodyFileURL: The URL of a temporary file to stream the request body from, if any.
+    public init(url: URL, method: Network.Method, headers: [String : String], timeout: TimeInterval, cachePolicy: URLRequest.CachePolicy = .reloadIgnoringLocalAndRemoteCacheData, body: Encodable? = nil, multiparts: [Part]?, bodyFileURL: URL? = nil) {
         self.url = url
         self.method = method
         self.headers = headers
@@ -41,6 +47,7 @@ public struct InterceptorRequest {
         self.cachePolicy = cachePolicy
         self.body = body
         self.multiparts = multiparts
+        self.bodyFileURL = bodyFileURL
     }
 }
 

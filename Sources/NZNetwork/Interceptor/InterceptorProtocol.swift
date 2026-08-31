@@ -29,7 +29,18 @@ public protocol InterceptorProtocol {
     ///   - mimeType: The MIME type of the multipart data.
     /// - Returns: A `Data` object representing the properly formatted multipart form request body.
     func beforeInterceptionBodyCreatorFor(multiparts: [Part], boundary: String) -> Data
-    
+
+    /// Writes a multipart/form-data body directly to a temporary file instead of building it
+    /// fully in memory, to avoid a large peak memory allocation when uploading big files (e.g.
+    /// video/image parts).
+    ///
+    /// - Parameters:
+    ///   - multiparts: An array of `Part` objects representing the form data parts.
+    ///   - boundary: The unique boundary string used to separate parts in the request.
+    /// - Returns: The URL of a temporary file containing the encoded body. `Network` deletes
+    ///   this file once the request (including any retries) completes.
+    func multipartBodyFileURL(multiparts: [Part], boundary: String) -> URL
+
     /// Sets up initial headers for a multipart request, adding a `Content-Type` if a boundary is provided.
     ///
     /// - Parameters:
@@ -117,10 +128,63 @@ public extension InterceptorProtocol {
         }
         
         body.append(boundaryPrefix.appending("--"))
-        
+
         return body
     }
-    
+
+    /// Default implementation, which streams each part's bytes straight to a temporary file
+    /// rather than accumulating them into a single, potentially huge, in-memory `Data`.
+    func multipartBodyFileURL(multiparts: [Part], boundary: String) -> URL {
+        let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        FileManager.default.createFile(atPath: fileURL.path, contents: nil)
+
+        guard let fileHandle = try? FileHandle(forWritingTo: fileURL) else {
+            // Fall back to the in-memory builder if the file couldn't be created.
+            let data = beforeInterceptionBodyCreatorFor(multiparts: multiparts, boundary: boundary)
+            try? data.write(to: fileURL)
+            return fileURL
+        }
+        defer { try? fileHandle.close() }
+
+        let boundaryPrefix = "--\(boundary)"
+
+        func write(_ string: String) {
+            guard let data = string.data(using: .utf8) else { return }
+            fileHandle.write(data)
+        }
+
+        multiparts.forEach { aPart in
+            write(boundaryPrefix)
+            write("\r\n")
+            if let filename = aPart.filename {
+                write("Content-Disposition: form-data; name=\"\(aPart.name)\"; filename=\"\(filename)\"\r\n")
+                if let mimeType = aPart.mimeType {
+                    write("Content-Type: \(mimeType.mimeType ?? "")")
+                }
+            } else {
+                let mimeType = aPart.mimeType ?? .text(subType: .plain(charset: .utf8))
+                write("Content-Disposition: form-data; name=\"\(aPart.name)\"\r\n")
+                write("Content-Type: \(mimeType.mimeType ?? "")")
+            }
+
+            write("\r\n\r\n")
+
+            if let value = aPart.value {
+                write(value)
+            }
+
+            if let data = aPart.body {
+                fileHandle.write(data)
+            }
+
+            write("\r\n")
+        }
+
+        write(boundaryPrefix.appending("--"))
+
+        return fileURL
+    }
+
     func setupingInitialHeaders(_ headers: [String: String], boundary: String?) -> [String: String] {
         var headers = headers
         if let boundary {

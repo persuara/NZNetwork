@@ -17,14 +17,14 @@ extension Network {
     /// ## Note:
     /// This API was added to provide a throwable version of the `proceedWithRequest` method for improved error handling,
     /// allowing consumers to catch and handle errors using Swift's `throws` mechanism.
-    internal func proceedWithRequest(path: Path, method: Method, body: Encodable?, multiparts: [Part]? = nil, boundary: String? = nil) async throws -> Data {
+    internal func proceedWithRequest(path: Path, method: Method, body: Encodable?, multiparts: [Part]? = nil, boundary: String? = nil, bodyFileURL: URL? = nil) async throws -> Data {
         // Construct the URL based on the provided parameters
         let url = URL(baseEndPoint: interceptor.baseURL, route: path.route, queryItems: path.queryItems)
-        
+
         // Initialize headers (Note: You may need to populate headers accordingly)
         var headers: [String: String] = [:]
         headers = interceptor.setupingInitialHeaders(headers, boundary: boundary)
-        
+
         // Create the initial request to be intercepted
         let requestToBeIntercepted = InterceptorRequest(
             url: url,
@@ -33,20 +33,27 @@ extension Network {
             timeout: path.timeout ?? interceptor.timeout,
             cachePolicy: path.cachePolicy ?? sessionConfiguration.cachePolicy,
             body: body,
-            multiparts: multiparts
+            multiparts: multiparts,
+            bodyFileURL: bodyFileURL
         )
-        
+
         // Intercept the request
         let interceptedRequest = try await interceptor.interceptThrowable(request: requestToBeIntercepted)
-        
+
         return try await createDataTask(with: interceptedRequest)
     }
-    
+
     internal func createDataTask(with request: InterceptorRequest, attempt: Int = 1) async throws -> Data {
+
+        defer {
+            if let bodyFileURL = request.bodyFileURL {
+                try? FileManager.default.removeItem(at: bodyFileURL)
+            }
+        }
 
         let dataAndResponse: (Data, URLResponse)
         do {
-            dataAndResponse = try await createDataTask(url: request.url, headers: request.headers, timeout: request.timeout, cachePolicy: request.cachePolicy, method: request.method)
+            dataAndResponse = try await createDataTask(url: request.url, headers: request.headers, timeout: request.timeout, cachePolicy: request.cachePolicy, method: request.method, bodyFileURL: request.bodyFileURL)
         } catch {
             throw error.isCancellationError ? CancellationError() : error
         }

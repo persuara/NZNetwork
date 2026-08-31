@@ -14,27 +14,33 @@ extension Network {
     ///   - body: An optional `Encodable` payload to be included in the request body.
     ///   - callback: A closure that receives a `NetworkCallback` object containing the response data, error information,
     ///               and additional details. The closure is invoked when the request completes.
-    internal func proceedWithRequest(path: Path, method: Method, body: Encodable?, multiparts: [Part]? = nil, boundary: String? = nil) async -> NetworkResult {
+    internal func proceedWithRequest(path: Path, method: Method, body: Encodable?, multiparts: [Part]? = nil, boundary: String? = nil, bodyFileURL: URL? = nil) async -> NetworkResult {
         // Construct the URL based on the provided parameters
         let url = URL(baseEndPoint: interceptor.baseURL, route: path.route, queryItems: path.queryItems)
-        
+
         // Initialize headers (Note: You may need to populate headers accordingly)
         var headers = [String: String]()
         headers = interceptor.setupingInitialHeaders(headers, boundary: boundary)
-        
+
         // Create the initial request to be intercepted
-        let requestToBeIntercepted = InterceptorRequest(url: url, method: method, headers: headers, timeout: path.timeout ?? interceptor.timeout, cachePolicy: path.cachePolicy ?? sessionConfiguration.cachePolicy, body: body, multiparts: multiparts)
-        
+        let requestToBeIntercepted = InterceptorRequest(url: url, method: method, headers: headers, timeout: path.timeout ?? interceptor.timeout, cachePolicy: path.cachePolicy ?? sessionConfiguration.cachePolicy, body: body, multiparts: multiparts, bodyFileURL: bodyFileURL)
+
         // Intercept the request
         let interceptedRequest = await interceptor.intercept(request: requestToBeIntercepted)
-        
+
         return await createDataTask(with: interceptedRequest)
     }
-    
+
     internal func createDataTask(with request: InterceptorRequest, attempt: Int = 1) async -> NetworkResult {
 
+        defer {
+            if let bodyFileURL = request.bodyFileURL {
+                try? FileManager.default.removeItem(at: bodyFileURL)
+            }
+        }
+
         do {
-            let dataAndResponse = try await createDataTask(url: request.url, headers: request.headers, timeout: request.timeout, cachePolicy: request.cachePolicy, method: request.method)
+            let dataAndResponse = try await createDataTask(url: request.url, headers: request.headers, timeout: request.timeout, cachePolicy: request.cachePolicy, method: request.method, bodyFileURL: request.bodyFileURL)
             
             let data = dataAndResponse.0
             let dataTaskResponse = dataAndResponse.1

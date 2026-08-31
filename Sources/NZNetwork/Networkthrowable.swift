@@ -15,31 +15,31 @@ extension Network {
     
     public func postThrowable(path: Path, multipart payload: any Part...) async throws -> Data {
         let boundary = "\(UUID().uuidString)"
-        let body = configureMultipartBody(payload: payload, boundary: boundary)
-        let method: Network.Method = .post(body: body)
-        return try await proceedWithRequest(path: path, method: method, body: body, multiparts: payload, boundary: boundary)
+        let fileURL = interceptor.multipartBodyFileURL(multiparts: payload, boundary: boundary)
+        let method: Network.Method = .post(body: Data())
+        return try await proceedWithRequest(path: path, method: method, body: nil, multiparts: payload, boundary: boundary, bodyFileURL: fileURL)
     }
-    
+
     public func putThrowable(path: Path, payload: any Encodable) async throws -> Data {
         let encodedData = try JSONEncoder().encode(payload)
         let method: Network.Method = .put(body: encodedData)
         return try await proceedWithRequest(path: path, method: method, body: payload)
     }
-    
+
     public func putThrowable(path: Path, multipart payload: any Part...) async throws -> Data {
         let boundary = "\(UUID().uuidString)"
-        let body = configureMultipartBody(payload: payload, boundary: boundary)
-        let method: Network.Method = .put(body: body)
-        return try await proceedWithRequest(path: path, method: method, body: body, multiparts: payload, boundary: boundary)
+        let fileURL = interceptor.multipartBodyFileURL(multiparts: payload, boundary: boundary)
+        let method: Network.Method = .put(body: Data())
+        return try await proceedWithRequest(path: path, method: method, body: nil, multiparts: payload, boundary: boundary, bodyFileURL: fileURL)
     }
-    
+
     public func putThrowable(path: Path, multipart payload: any Part..., mimeType: MIMEType) async throws -> Data {
         let boundary = "\(UUID().uuidString)"
-        let body = configureMultipartBody(payload: payload, boundary: boundary)
-        let method: Network.Method = .put(body: body)
-        return try await proceedWithRequest(path: path, method: method, body: body, multiparts: payload, boundary: boundary)
+        let fileURL = interceptor.multipartBodyFileURL(multiparts: payload, boundary: boundary)
+        let method: Network.Method = .put(body: Data())
+        return try await proceedWithRequest(path: path, method: method, body: nil, multiparts: payload, boundary: boundary, bodyFileURL: fileURL)
     }
-    
+
     public func patchThrowable(path: Path, payload: any Encodable) async throws -> Data {
         let requestBody = try JSONEncoder().encode(payload)
         let method: Network.Method = .patch(body: requestBody)

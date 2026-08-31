@@ -259,17 +259,14 @@ public class Network: NSObject, NetworkProtocol {
     }
     
     public func post(path: Path, multipart payload: Part...) async -> NetworkResult {
-        let boundary = "\(UUID().uuidString)"
-        let body = configureMultipartBody(payload: payload, boundary: boundary)
-        let method: Network.Method = .post(body: body)
-        return await proceedWithRequest(path: path, method: method, body: body, multiparts: payload, boundary: boundary)
+        await post(path: path, multiparts: payload)
     }
-    
+
     public func post(path: Path, multiparts payload: [any Part]) async -> NetworkResult {
         let boundary = "\(UUID().uuidString)"
-        let body = configureMultipartBody(payload: payload, boundary: boundary)
-        let method: Network.Method = .post(body: body)
-        return await proceedWithRequest(path: path, method: method, body: body, multiparts: payload, boundary: boundary)
+        let fileURL = interceptor.multipartBodyFileURL(multiparts: payload, boundary: boundary)
+        let method: Network.Method = .post(body: Data())
+        return await proceedWithRequest(path: path, method: method, body: nil, multiparts: payload, boundary: boundary, bodyFileURL: fileURL)
     }
     
     public func put(path: Path, payload: Data) async -> NetworkResult {
@@ -278,20 +275,14 @@ public class Network: NSObject, NetworkProtocol {
     }
     
     public func put(path: Path, multipart payload: Part...) async -> NetworkResult {
-        
-        let boundary = "\(UUID().uuidString)"
-        let body = configureMultipartBody(payload: payload, boundary: boundary)
-        
-        let method: Network.Method = .put(body: body)
-        return await proceedWithRequest(path: path, method: method, body: body, multiparts: payload, boundary: boundary)
+        await put(path: path, multiparts: payload)
     }
-    
+
     public func put(path: Path, multiparts payload: [any Part]) async -> NetworkResult {
         let boundary = "\(UUID().uuidString)"
-        let body = configureMultipartBody(payload: payload, boundary: boundary)
-        
-        let method: Network.Method = .put(body: body)
-        return await proceedWithRequest(path: path, method: method, body: body, multiparts: payload, boundary: boundary)
+        let fileURL = interceptor.multipartBodyFileURL(multiparts: payload, boundary: boundary)
+        let method: Network.Method = .put(body: Data())
+        return await proceedWithRequest(path: path, method: method, body: nil, multiparts: payload, boundary: boundary, bodyFileURL: fileURL)
     }
     
     public func patch(path: Path, payload: Encodable) async -> NetworkResult {
