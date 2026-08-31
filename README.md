@@ -1,4 +1,4 @@
-# NZNetwork
+# Network
 
 # Conventional Commits
 
