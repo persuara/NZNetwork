@@ -175,10 +175,10 @@ extension MIMEType {
         case .audio(_): return "audio"
         case .document(_), .octetStream: return "application"
         case .text(_): return "text"
-        case .custom(let mimeType): return mimeType.split(separator: "/").first?.base
+        case .custom(let mimeType): return mimeType.split(separator: "/").first.map(String.init)
         }
     }
-    
+
     private var subtype: String? {
         switch self {
         case .image(let subtype): return subtype.rawValue
@@ -187,7 +187,7 @@ extension MIMEType {
         case .document(let subtype): return subtype.rawValue
         case .text(let subtype): return subtype.rawValue
         case .octetStream: return "octet-stream"
-        case .custom(let mimeType): return mimeType.split(separator: "/").last?.base
+        case .custom(let mimeType): return mimeType.split(separator: "/").last.map(String.init)
         }
     }
 }

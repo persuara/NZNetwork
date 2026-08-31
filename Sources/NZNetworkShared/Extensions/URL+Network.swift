@@ -19,7 +19,7 @@ public extension URL {
         } else {
             
             let endPointProtocol: String = "https"
-            let finalString = endPointProtocol.networkProtocolSuffix().add(component: baseEndPoint).forwardSlashWhenNeeded().add(component: route)
+            let finalString = endPointProtocol.networkProtocolSuffix().add(component: baseEndPoint).forwardSlashWhenNeeded().add(component: route.strippingLeadingSlash())
             
             guard var urlComponents = URLComponents(string: finalString) else {
                 fatalError("URLComponents(string:) failed to produce results with string: \(finalString)")
@@ -61,5 +61,11 @@ fileprivate extension String {
         /// - Returns: The string with the added component.
     func add(component: String) -> String {
         self + component
+    }
+
+    /// Removes a single leading "/", if present — used so a route can be given either with or
+    /// without one without producing a doubled slash when joined onto the base URL.
+    func strippingLeadingSlash() -> String {
+        hasPrefix("/") ? String(dropFirst()) : self
     }
 }
