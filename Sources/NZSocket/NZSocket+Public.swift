@@ -134,23 +134,26 @@ internal extension NZSocket {
     /// a consumer's `for try await` loop over `messages()` transparently keeps receiving messages
     /// once the new connection is established.
     func handleUnexpectedDisconnect(error: Error?) {
-        guard !isExplicitDisconnect, let lastPath else {
+        // Atomically read the disconnect/path state and bump the attempt counter, so a
+        // concurrent connect()/disconnect() can't interleave with this decision.
+        let decision: (path: Path, protocols: [String], delay: TimeInterval, attempt: Int)? = connectionStateBox.withLock { state in
+            guard !state.isExplicitDisconnect, let lastPath = state.lastPath else { return nil }
+            state.reconnectAttempt += 1
+            guard let delay = reconnectPolicy.delayBeforeReconnecting(attempt: state.reconnectAttempt) else { return nil }
+            return (lastPath, state.lastProtocols, delay, state.reconnectAttempt)
+        }
+
+        guard let decision else {
             messageContinuation?.finish(throwing: error)
             return
         }
 
-        reconnectAttempt += 1
-        guard let delay = reconnectPolicy.delayBeforeReconnecting(attempt: reconnectAttempt) else {
-            messageContinuation?.finish(throwing: error)
-            return
-        }
-
-        delegate?.socket(self, willReconnectAttempt: reconnectAttempt, after: delay)
+        delegate?.socket(self, willReconnectAttempt: decision.attempt, after: decision.delay)
 
         Task { [weak self] in
-            try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            try? await Task.sleep(nanoseconds: UInt64(decision.delay * 1_000_000_000))
             guard let self, !self.isExplicitDisconnect else { return }
-            self.connect(to: lastPath, protocols: self.lastProtocols)
+            self.connect(to: decision.path, protocols: decision.protocols)
         }
     }
 }

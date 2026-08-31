@@ -2,14 +2,14 @@ import Foundation
 
 /// Configures automatic reconnection when an `NZSocket` connection drops unexpectedly (i.e. not
 /// from an explicit `disconnect()` call).
-public struct NZSocketReconnectPolicy {
+public struct NZSocketReconnectPolicy: Sendable {
 
     /// The maximum number of reconnect attempts after an unexpected disconnect. `0` (the default
     /// via `.none`) disables auto-reconnect entirely.
     public var maxAttempts: Int
 
     /// Computes the delay, in seconds, to wait before the given reconnect attempt.
-    public var backoff: (_ attempt: Int) -> TimeInterval
+    public var backoff: @Sendable (_ attempt: Int) -> TimeInterval
 
     /// Creates a reconnect policy.
     ///
@@ -19,7 +19,7 @@ public struct NZSocketReconnectPolicy {
     ///     Defaults to exponential backoff capped at 30 seconds (1s, 2s, 4s, 8s, 16s, 30s, 30s, ...).
     public init(
         maxAttempts: Int = 5,
-        backoff: @escaping (_ attempt: Int) -> TimeInterval = { attempt in min(30, pow(2.0, Double(attempt - 1))) }
+        backoff: @escaping @Sendable (_ attempt: Int) -> TimeInterval = { attempt in min(30, pow(2.0, Double(attempt - 1))) }
     ) {
         self.maxAttempts = maxAttempts
         self.backoff = backoff

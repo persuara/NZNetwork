@@ -2,13 +2,13 @@ import Foundation
 import NZNetworkShared
 
 /// A message sent or received over a WebSocket connection.
-public enum NZSocketMessage {
+public enum NZSocketMessage: Sendable {
     case string(String)
     case data(Data)
 }
 
 /// Errors specific to `NZSocket` operations.
-public enum NZSocketError: Error {
+public enum NZSocketError: Error, Sendable {
     /// A `send`/`sendPing` call was made before `connect(to:protocols:)` was called, or after the connection closed.
     case notConnected
     /// A JSON-encoded value could not be represented as a UTF-8 string message.
@@ -99,7 +99,7 @@ public protocol NZSocketProtocol: AnyObject {
 }
 
 /// A class that manages a single WebSocket connection, built on `URLSessionWebSocketTask`.
-public final class NZSocket: NSObject {
+public final class NZSocket: NSObject, @unchecked Sendable {
 
     /// The delegate notified about connect/disconnect lifecycle events.
     weak public var delegate: NZSocketDelegate?
@@ -110,14 +110,66 @@ public final class NZSocket: NSObject {
     /// The timeout interval used while establishing the connection.
     internal let timeout: TimeInterval
 
-    /// The active WebSocket task, if connected.
-    internal var task: URLSessionWebSocketTask?
+    /// Every field below is mutated both from whichever thread calls `connect`/`send`/`disconnect`,
+    /// and from the `URLSession`'s own delegate queue — lock-protected so that's actually safe,
+    /// rather than merely not-flagged by the Sendable checker. `internal` (not `private`) so
+    /// `NZSocket+Public.swift` can perform an atomic compound read-and-update for reconnect decisions.
+    internal let connectionStateBox = Locked(ConnectionState())
 
-    /// The continuation used to yield messages onto the `messages()` stream.
-    internal var messageContinuation: AsyncThrowingStream<NZSocketMessage, Error>.Continuation?
+    internal struct ConnectionState {
+        var task: URLSessionWebSocketTask?
+        var messageContinuation: AsyncThrowingStream<NZSocketMessage, Error>.Continuation?
+        var isConnected = false
+        var lastPath: Path?
+        var lastProtocols: [String] = []
+        var isExplicitDisconnect = false
+        var reconnectAttempt = 0
+        var heartbeatTask: Task<Void, Never>?
+    }
+
+    internal var task: URLSessionWebSocketTask? {
+        get { connectionStateBox.get().task }
+        set { connectionStateBox.withLock { $0.task = newValue } }
+    }
+
+    internal var messageContinuation: AsyncThrowingStream<NZSocketMessage, Error>.Continuation? {
+        get { connectionStateBox.get().messageContinuation }
+        set { connectionStateBox.withLock { $0.messageContinuation = newValue } }
+    }
 
     /// `true` while a WebSocket connection is open.
-    public internal(set) var isConnected: Bool = false
+    public internal(set) var isConnected: Bool {
+        get { connectionStateBox.get().isConnected }
+        set { connectionStateBox.withLock { $0.isConnected = newValue } }
+    }
+
+    internal var lastPath: Path? {
+        get { connectionStateBox.get().lastPath }
+        set { connectionStateBox.withLock { $0.lastPath = newValue } }
+    }
+
+    internal var lastProtocols: [String] {
+        get { connectionStateBox.get().lastProtocols }
+        set { connectionStateBox.withLock { $0.lastProtocols = newValue } }
+    }
+
+    /// `true` once `disconnect()` has been called explicitly, suppressing auto-reconnect.
+    internal var isExplicitDisconnect: Bool {
+        get { connectionStateBox.get().isExplicitDisconnect }
+        set { connectionStateBox.withLock { $0.isExplicitDisconnect = newValue } }
+    }
+
+    /// The number of reconnect attempts made since the last successful connection.
+    internal var reconnectAttempt: Int {
+        get { connectionStateBox.get().reconnectAttempt }
+        set { connectionStateBox.withLock { $0.reconnectAttempt = newValue } }
+    }
+
+    /// The task periodically sending pings while connected, if `heartbeatInterval` is set.
+    internal var heartbeatTask: Task<Void, Never>? {
+        get { connectionStateBox.get().heartbeatTask }
+        set { connectionStateBox.withLock { $0.heartbeatTask = newValue } }
+    }
 
     /// Session-level behavior such as cellular access and connectivity waiting.
     internal let sessionConfiguration: NetworkSessionConfiguration
@@ -128,19 +180,6 @@ public final class NZSocket: NSObject {
     /// How often to automatically send a ping while connected. `nil` (default) disables the
     /// built-in heartbeat scheduler.
     internal let heartbeatInterval: TimeInterval?
-
-    /// The path/protocols last passed to `connect(to:protocols:)`, used to reconnect.
-    internal var lastPath: Path?
-    internal var lastProtocols: [String] = []
-
-    /// `true` once `disconnect()` has been called explicitly, suppressing auto-reconnect.
-    internal var isExplicitDisconnect = false
-
-    /// The number of reconnect attempts made since the last successful connection.
-    internal var reconnectAttempt = 0
-
-    /// The task periodically sending pings while connected, if `heartbeatInterval` is set.
-    internal var heartbeatTask: Task<Void, Never>?
 
     /// Initializes a new instance of NZSocket.
     ///
@@ -167,12 +206,20 @@ public final class NZSocket: NSObject {
         super.init()
     }
 
-    /// The URLSession used for the WebSocket task.
-    internal lazy var session: URLSession = {
-        let configuration = URLSessionConfiguration.default
-        sessionConfiguration.apply(to: configuration)
-        return URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
-    }()
+    /// The URLSession used for the WebSocket task. Lazily created, lock-protected so concurrent
+    /// first access from multiple threads can't race (a plain `lazy var` is not thread-safe).
+    private let sessionBox = Locked<URLSession?>(nil)
+
+    internal var session: URLSession {
+        sessionBox.withLock { existing in
+            if let existing { return existing }
+            let configuration = URLSessionConfiguration.default
+            sessionConfiguration.apply(to: configuration)
+            let newSession = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
+            existing = newSession
+            return newSession
+        }
+    }
 }
 
 /// A struct representing a path for a WebSocket connection.
