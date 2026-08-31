@@ -347,7 +347,18 @@ let parts: [Part] = [ImagePart(body: imageData), TextField(name: "bio", value: "
 let data = try await network.postThrowable(path: Path(route: "/profile", queryItems: nil), multipart: parts)
 ```
 
-The framework builds the `multipart/form-data` body and `Content-Type` boundary header for you. To keep large uploads (photos, videos) from spiking memory, the body is streamed from a temporary file rather than assembled into one large in-memory `Data` — the file is written incrementally and deleted automatically once the request (and any retries) finishes. Note this only avoids the extra full-body copy: each `Part.body`'s own `Data` is still loaded into memory once by whoever constructs the `Part`, since `Part` itself isn't stream-based.
+The framework builds the `multipart/form-data` body and `Content-Type` boundary header for you. To keep large uploads (photos, videos) from spiking memory, the body is streamed from a temporary file rather than assembled into one large in-memory `Data` — the file is written incrementally and deleted automatically once the request (and any retries) finishes.
+
+That avoids the extra full-body copy, but a `Part` whose `body` is `Data` still requires that data to be fully loaded into memory by whoever constructs the part. For a genuinely huge single file, use `FilePart` instead — it streams straight from disk in bounded chunks, so the file's bytes are never held in memory all at once:
+
+```swift
+let result = await network.post(
+    path: Path(route: "/videos", queryItems: nil),
+    multipart: FilePart(name: "video", fileURL: localVideoFileURL)
+)
+```
+
+`FilePart` infers `filename` and `mimeType` from the file URL if you don't pass them explicitly. You can also add `bodyFileURL` to your own custom `Part` conformances instead of using `FilePart` — it's a protocol requirement with a default of `nil`, so existing conformances are unaffected, and when set it takes precedence over `body`.
 
 ### 1.7 `application/x-www-form-urlencoded` requests
 
