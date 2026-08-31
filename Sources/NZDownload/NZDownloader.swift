@@ -214,25 +214,54 @@ public class NZDownloader: NSObject {
     
     /// The timeout interval for network requests.
     internal let timeout: TimeInterval
-    
+
+    /// The identifier used to run this downloader's session in the background, if any.
+    ///
+    /// When set, transfers continue while the app is suspended or terminated, and the system
+    /// relaunches the app to deliver events. Must be unique per app and stable across launches.
+    internal let backgroundSessionIdentifier: String?
+
+    /// `true` when this downloader was configured with a `backgroundSessionIdentifier`.
+    public var isBackgroundSession: Bool { backgroundSessionIdentifier != nil }
+
+    /// The completion handler provided by the system via
+    /// `application(_:handleEventsForBackgroundURLSession:completionHandler:)`.
+    ///
+    /// Set this from your `UIApplicationDelegate`/`UISceneDelegate` when the app is relaunched to
+    /// handle background transfer events; it is called (and cleared) once all queued delegate
+    /// callbacks for the background session have been delivered.
+    public var backgroundCompletionHandler: (() -> Void)?
+
     /// Initializes a new instance of NZDownloader.
     ///
     /// - Parameters:
     ///   - baseURL: The base URL used for constructing URLs for network requests.
     ///   - timeout: The timeout interval for network requests (default is 10 seconds).
-    public init(baseURL: String, timeout: TimeInterval = 10) {
+    ///   - backgroundSessionIdentifier: When provided, the downloader uses a background
+    ///     `URLSession` so uploads/downloads can continue while the app is suspended or
+    ///     terminated. Must be unique per app and stable across launches (default is `nil`,
+    ///     meaning a regular foreground session is used).
+    public init(baseURL: String, timeout: TimeInterval = 10, backgroundSessionIdentifier: String? = nil) {
         self.baseURL = baseURL
         self.timeout = timeout
-        
+        self.backgroundSessionIdentifier = backgroundSessionIdentifier
+
         super.init()
     }
-    
+
     /// The URLSession used for network requests.
     internal lazy var session: URLSession = {
         let session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
         return session
     }()
-    
+
     /// The URLSessionConfiguration used for configuring the session.
-    private lazy var configuration = URLSessionConfiguration.default
+    private lazy var configuration: URLSessionConfiguration = {
+        guard let backgroundSessionIdentifier else {
+            return .default
+        }
+        let configuration = URLSessionConfiguration.background(withIdentifier: backgroundSessionIdentifier)
+        configuration.sessionSendsLaunchEvents = true
+        return configuration
+    }()
 }

@@ -174,9 +174,22 @@ extension NZDownloader: URLSessionDownloadDelegate {
     ///   - session: The session object that was invalidated.
     ///   - error: The error that caused invalidation, or nil if the invalidation was explicit.
     open func urlSession(_ session: URLSession, didBecomeInvalidWithError error: Error?) {
-        
+
         if let delegate = delegate {
             delegate.downloader(self, session, didBecomeInvalidWithError: error)
+        }
+    }
+
+    /// Tells the delegate that all messages enqueued for a background session have been delivered.
+    ///
+    /// Call this from `application(_:handleEventsForBackgroundURLSession:completionHandler:)` by
+    /// storing the system's completion handler in `backgroundCompletionHandler` — it is invoked
+    /// (and cleared) here, once the session has finished replaying its queued events.
+    /// - Parameter session: The background session that finished delivering its events.
+    open func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
+        DispatchQueue.main.async { [weak self] in
+            self?.backgroundCompletionHandler?()
+            self?.backgroundCompletionHandler = nil
         }
     }
 }

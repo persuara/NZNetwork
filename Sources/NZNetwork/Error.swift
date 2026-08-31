@@ -36,3 +36,13 @@ public extension Error {
         return error
     }
 }
+
+/// Identifies transport-level errors that originate from a cancelled request (either the enclosing
+/// Swift `Task` being cancelled, or the underlying `URLSessionTask` being cancelled directly).
+internal extension Error {
+    var isCancellationError: Bool {
+        if self is CancellationError { return true }
+        if let urlError = self as? URLError, urlError.code == .cancelled { return true }
+        return false
+    }
+}

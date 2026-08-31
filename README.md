@@ -141,7 +141,40 @@ do {
 
 Available methods on both APIs: `get`, `post(payload:)`, `put(payload:)`, `delete`, `delete(body:)`, plus `...Throwable` equivalents (`getThrowable`, `postThrowable`, `putThrowable`, `deleteThrowable`).
 
-### 1.4 Multipart requests
+### 1.4 Cancelling a request
+
+Every `Network` method is `async`, so the idiomatic way to cancel one is to wrap the call in a Swift `Task` and cancel that task — cancellation propagates straight through to the underlying `URLSessionTask`:
+
+```swift
+let task = Task {
+    await network.get(path: Path(route: "/users", queryItems: nil))
+}
+
+// later, e.g. when the user navigates away
+task.cancel()
+
+let result = await task.value
+if case .cancelled = result {
+    // the request never completed
+}
+```
+
+The throwing API surfaces the same event as a `CancellationError` instead:
+
+```swift
+let task = Task {
+    try await network.getThrowable(path: Path(route: "/users", queryItems: nil))
+}
+task.cancel()
+
+do {
+    _ = try await task.value
+} catch is CancellationError {
+    // the request never completed
+}
+```
+
+### 1.5 Multipart requests
 
 Define your form fields by conforming to `Part`:
 
@@ -179,7 +212,7 @@ let data = try await network.postThrowable(path: Path(route: "/profile", queryIt
 
 The framework builds the `multipart/form-data` body and `Content-Type` boundary header for you.
 
-### 1.5 `MIMEType`
+### 1.6 `MIMEType`
 
 A typed representation of common MIME types, used for multipart parts:
 
@@ -257,6 +290,35 @@ Implement `NZDownloaderUploadDelegate` (adds `didReceiveProgress` for uploads) t
 ### 2.4 Session-level events
 
 Set `downloader.delegate` (`NZDownloaderDelegate`) to be notified if the underlying `URLSession` becomes invalid.
+
+### 2.5 Background sessions
+
+Pass a `backgroundSessionIdentifier` to run transfers on a background `URLSession`, so downloads and uploads keep going while your app is suspended or terminated, and the system relaunches it to deliver progress/completion events:
+
+```swift
+let downloader = NZDownloader(
+    baseURL: "api.example.com",
+    timeout: 30,
+    backgroundSessionIdentifier: "com.yourapp.downloader.background"
+)
+```
+
+The identifier must be unique to your app and stable across launches. Everything from §2.2–2.3 works unchanged — `download`/`upload` still return a task identifier, and delegate callbacks still fire the same way. One difference: background sessions can't upload an in-memory `Data` blob directly (only file-backed uploads and downloads are supported), so `upload(from data:to:delegate:)` transparently writes the data to a temporary file first when `downloader.isBackgroundSession` is `true` — you don't need to do anything differently.
+
+Wire the app back up to the session in your `UIApplicationDelegate`:
+
+```swift
+func application(
+    _ application: UIApplication,
+    handleEventsForBackgroundURLSession identifier: String,
+    completionHandler: @escaping () -> Void
+) {
+    // `downloader` must be the same instance (same backgroundSessionIdentifier) used to start the transfer.
+    downloader.backgroundCompletionHandler = completionHandler
+}
+```
+
+`NZDownloader` calls that stored handler for you once the session has finished replaying all of its queued events.
 
 ---
 

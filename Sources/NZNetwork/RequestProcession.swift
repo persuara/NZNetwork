@@ -70,7 +70,11 @@ extension Network {
                 return await createDataTask(with: request)
             }
         } catch let error {
-            
+
+            if error.isCancellationError {
+                return .cancelled
+            }
+
             let error = error as NSError
             let responseToBeIntercepted = InterceptorResponse(request: request, localizedMessageForStatusCode: "", statusCode: error.code, headers: request.headers, result: .error(error: error))
             let interceptedResponse = await interceptor.intercept(response: responseToBeIntercepted)

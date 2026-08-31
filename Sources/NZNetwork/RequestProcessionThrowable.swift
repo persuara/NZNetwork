@@ -42,9 +42,14 @@ extension Network {
     }
     
     internal func createDataTask(with request: InterceptorRequest) async throws -> Data {
-        
-        let dataAndResponse = try await createDataTask(url: request.url, headers: request.headers, timeout: request.timeout, method: request.method)
-        
+
+        let dataAndResponse: (Data, URLResponse)
+        do {
+            dataAndResponse = try await createDataTask(url: request.url, headers: request.headers, timeout: request.timeout, method: request.method)
+        } catch {
+            throw error.isCancellationError ? CancellationError() : error
+        }
+
         let data = dataAndResponse.0
         let response = dataAndResponse.1
         
