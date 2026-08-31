@@ -194,6 +194,19 @@ do {
 
 Available methods on both APIs: `get`, `post(payload:)`, `put(payload:)`, `patch(payload:)`, `delete`, `delete(body:)`, `head`, `options`, plus `...Throwable` equivalents (`getThrowable`, `postThrowable`, `putThrowable`, `patchThrowable`, `deleteThrowable`, `headThrowable`, `optionsThrowable`).
 
+#### Typed decoding sugar
+
+If you'd rather not call `JSONDecoder().decode(_:from:)` manually at every call site, a `...Decoded` variant of each `...Throwable` method decodes the JSON response for you:
+
+```swift
+struct User: Decodable { let id: Int; let name: String }
+
+let user: User = try await network.getDecoded(path: Path(route: "/users/1", queryItems: nil))
+let created: User = try await network.postDecoded(path: Path(route: "/users", queryItems: nil), payload: NewUser(name: "Ada"))
+```
+
+Available: `getDecoded`, `postDecoded(payload:)`, `putDecoded(payload:)`, `patchDecoded(payload:)`, `deleteDecoded`, each taking an optional `decoder: JSONDecoder` (defaults to a plain `JSONDecoder()`). Decoding failures throw the raw `DecodingError`, same as encoding failures already do on the `...Throwable` methods — they aren't wrapped in `NetworkError`.
+
 ### 1.4 Per-request timeout and cache policy
 
 `Path` accepts an optional `timeout`, which overrides the interceptor's default `timeout` for just that one request:
@@ -298,9 +311,28 @@ let parts: [Part] = [ImagePart(body: imageData), TextField(name: "bio", value: "
 let data = try await network.postThrowable(path: Path(route: "/profile", queryItems: nil), multipart: parts)
 ```
 
-The framework builds the `multipart/form-data` body and `Content-Type` boundary header for you.
+The framework builds the `multipart/form-data` body and `Content-Type` boundary header for you. To keep large uploads (photos, videos) from spiking memory, the body is streamed from a temporary file rather than assembled into one large in-memory `Data` — the file is written incrementally and deleted automatically once the request (and any retries) finishes. Note this only avoids the extra full-body copy: each `Part.body`'s own `Data` is still loaded into memory once by whoever constructs the `Part`, since `Part` itself isn't stream-based.
 
-### 1.7 `MIMEType`
+### 1.7 `application/x-www-form-urlencoded` requests
+
+For endpoints expecting classic HTML-form bodies instead of JSON or multipart, use `FormBody`:
+
+```swift
+let result = await network.postForm(
+    path: Path(route: "/oauth/token", queryItems: nil),
+    form: FormBody(["grant_type": "password", "username": "ada", "password": "secret"])
+)
+
+// Order-preserving, if the server cares about field order:
+let data = try await network.postFormThrowable(
+    path: Path(route: "/oauth/token", queryItems: nil),
+    form: FormBody([URLQueryItem(name: "grant_type", value: "password"), URLQueryItem(name: "username", value: "ada")])
+)
+```
+
+`FormBody` percent-encodes the fields and sets `Content-Type: application/x-www-form-urlencoded; charset=utf-8` for you. Available: `postForm`/`postFormThrowable`, `putForm`/`putFormThrowable`, `patchForm`/`patchFormThrowable`.
+
+### 1.8 `MIMEType`
 
 A typed representation of common MIME types, used for multipart parts:
 
