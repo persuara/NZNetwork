@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: macos-15
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select an available iOS Simulator
+        id: simulator
+        run: |
+          DEVICE_NAME=$(xcrun simctl list devices available | grep -m 1 "iPhone" | sed -E 's/^ *([^(]+) \(.*/\1/' | sed -E 's/[[:space:]]+$//')
+          echo "Using simulator: $DEVICE_NAME"
+          echo "name=$DEVICE_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Build
+        run: xcodebuild build -scheme NZNetwork -destination "generic/platform=iOS Simulator"
+
+      - name: Test
+        run: |
+          xcodebuild test \
+            -scheme NZNetwork \
+            -destination "platform=iOS Simulator,name=${{ steps.simulator.outputs.name }}"
