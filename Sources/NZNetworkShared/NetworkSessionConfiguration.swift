@@ -28,13 +28,19 @@ public struct NetworkSessionConfiguration {
     /// When `true`, tasks wait for connectivity to become available instead of failing immediately. Default `false`.
     public var waitsForConnectivity: Bool
 
+    /// Custom `URLProtocol` subclasses to install on the session, ahead of the system defaults.
+    /// `nil` (default) leaves the session's protocol handling untouched. Primarily useful for
+    /// injecting a stub `URLProtocol` in tests.
+    public var protocolClasses: [AnyClass]?
+
     public init(
         cachePolicy: URLRequest.CachePolicy = .reloadIgnoringLocalAndRemoteCacheData,
         urlCache: URLCache? = nil,
         allowsCellularAccess: Bool = true,
         allowsExpensiveNetworkAccess: Bool = true,
         allowsConstrainedNetworkAccess: Bool = true,
-        waitsForConnectivity: Bool = false
+        waitsForConnectivity: Bool = false,
+        protocolClasses: [AnyClass]? = nil
     ) {
         self.cachePolicy = cachePolicy
         self.urlCache = urlCache
@@ -42,6 +48,7 @@ public struct NetworkSessionConfiguration {
         self.allowsExpensiveNetworkAccess = allowsExpensiveNetworkAccess
         self.allowsConstrainedNetworkAccess = allowsConstrainedNetworkAccess
         self.waitsForConnectivity = waitsForConnectivity
+        self.protocolClasses = protocolClasses
     }
 
     /// The default configuration, preserving this framework's historical behavior (no caching).
@@ -57,5 +64,8 @@ public struct NetworkSessionConfiguration {
         configuration.allowsExpensiveNetworkAccess = allowsExpensiveNetworkAccess
         configuration.allowsConstrainedNetworkAccess = allowsConstrainedNetworkAccess
         configuration.waitsForConnectivity = waitsForConnectivity
+        if let protocolClasses {
+            configuration.protocolClasses = protocolClasses
+        }
     }
 }

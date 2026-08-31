@@ -34,5 +34,14 @@ let package = Package(
         .target(
             name: "NZReachability",
             dependencies: []),
+        .testTarget(
+            name: "NZNetworkSharedTests",
+            dependencies: ["NZNetworkShared"]),
+        .testTarget(
+            name: "NZNetworkTests",
+            dependencies: ["NZNetwork", "NZNetworkShared"]),
+        .testTarget(
+            name: "NZSocketTests",
+            dependencies: ["NZSocket"]),
     ]
 )
