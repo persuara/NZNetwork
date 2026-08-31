@@ -11,6 +11,8 @@ public enum NZSocketMessage {
 public enum NZSocketError: Error {
     /// A `send`/`sendPing` call was made before `connect(to:protocols:)` was called, or after the connection closed.
     case notConnected
+    /// A JSON-encoded value could not be represented as a UTF-8 string message.
+    case encodingFailed
 }
 
 /// A protocol that defines the connection lifecycle events for `NZSocket`.

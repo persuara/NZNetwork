@@ -53,6 +53,43 @@ extension NZSocket: NZSocketProtocol {
     }
 }
 
+/// JSON convenience built on top of the raw `.string`/`.data` message API.
+public extension NZSocketProtocol {
+
+    /// Encodes `value` as JSON and sends it as a `.string` message.
+    func send<T: Encodable>(_ value: T, encoder: JSONEncoder = JSONEncoder()) async throws {
+        let data = try encoder.encode(value)
+        guard let string = String(data: data, encoding: .utf8) else {
+            throw NZSocketError.encodingFailed
+        }
+        try await send(.string(string))
+    }
+
+    /// Decodes each incoming message as JSON `T`. `.data` messages are decoded from their raw
+    /// bytes; `.string` messages are decoded from their UTF-8 bytes. Subject to the same
+    /// "call once per connection" rule as `messages()`, since it's built on top of it.
+    func messages<T: Decodable>(decoder: JSONDecoder = JSONDecoder()) -> AsyncThrowingStream<T, Error> {
+        AsyncThrowingStream { continuation in
+            let task = Task {
+                do {
+                    for try await message in messages() {
+                        let data: Data
+                        switch message {
+                        case .data(let raw): data = raw
+                        case .string(let string): data = Data(string.utf8)
+                        }
+                        continuation.yield(try decoder.decode(T.self, from: data))
+                    }
+                    continuation.finish()
+                } catch {
+                    continuation.finish(throwing: error)
+                }
+            }
+            continuation.onTermination = { _ in task.cancel() }
+        }
+    }
+}
+
 internal extension NZSocket {
 
     /// Recursively receives messages from the WebSocket task and forwards them to the `messages()` stream.
