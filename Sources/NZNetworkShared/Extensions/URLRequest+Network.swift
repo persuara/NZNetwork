@@ -3,7 +3,7 @@ import Foundation
 public extension URLRequest {
     
     private enum Method: String {
-        case get = "GET", post = "POST", put = "PUT", delete = "DELETE"
+        case get = "GET", post = "POST", put = "PUT", delete = "DELETE", patch = "PATCH", head = "HEAD", options = "OPTIONS"
     }
     
     /// This method changes the HTTPMethod value of any given URLRequest to "GET".
@@ -43,6 +43,32 @@ public extension URLRequest {
         return self
     }
     
+    /// This method changes the HTTPMethod value of any given URLRequest to "PATCH".
+    /// This must be the only function called in your stream to change HTTPMethod, otherwise the last HTTPMethod set will override any previous values.
+    /// - Parameter body: This method also requires the httpBody associated with the "PATCH" HTTPMethod.
+    /// - Returns: The same URLRequest object with a different HTTPMethod value.
+    @discardableResult mutating func asPatch(body: Data) -> URLRequest {
+        self.httpMethod = Method.patch.rawValue
+        self.httpBody = body
+        return self
+    }
+
+    /// This method changes the HTTPMethod value of any given URLRequest to "HEAD".
+    /// This must be the only function called in your stream to change HTTPMethod, otherwise the last HTTPMethod set will override any previous values.
+    /// - Returns: The same URLRequest object with a different HTTPMethod value.
+    @discardableResult mutating func asHead() -> URLRequest {
+        self.httpMethod = Method.head.rawValue
+        return self
+    }
+
+    /// This method changes the HTTPMethod value of any given URLRequest to "OPTIONS".
+    /// This must be the only function called in your stream to change HTTPMethod, otherwise the last HTTPMethod set will override any previous values.
+    /// - Returns: The same URLRequest object with a different HTTPMethod value.
+    @discardableResult mutating func asOptions() -> URLRequest {
+        self.httpMethod = Method.options.rawValue
+        return self
+    }
+
     /// Sets the headers of the URLRequest by applying the provided dictionary of headers.
     ///
     /// This method mutates the current URLRequest instance by setting headers based on the

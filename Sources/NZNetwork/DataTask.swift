@@ -31,6 +31,12 @@ internal extension Network {
             request.asPost(body: body)
         case .put(let body):
             request.asPut(body: body)
+        case .patch(let body):
+            request.asPatch(body: body)
+        case .head:
+            request.asHead()
+        case .options:
+            request.asOptions()
         }
         
         // Perform the asynchronous data task and return the result

@@ -40,6 +40,20 @@ extension Network {
         return try await proceedWithRequest(path: path, method: method, body: body, multiparts: payload, boundary: boundary)
     }
     
+    public func patchThrowable(path: Path, payload: any Encodable) async throws -> Data {
+        let requestBody = try JSONEncoder().encode(payload)
+        let method: Network.Method = .patch(body: requestBody)
+        return try await proceedWithRequest(path: path, method: method, body: payload)
+    }
+
+    public func headThrowable(path: Path) async throws -> Data {
+        try await proceedWithRequest(path: path, method: .head, body: nil)
+    }
+
+    public func optionsThrowable(path: Path) async throws -> Data {
+        try await proceedWithRequest(path: path, method: .options, body: nil)
+    }
+
     public func deleteThrowable(path: Path) async throws -> Data {
         try await proceedWithRequest(path: path, method: .delete(body: nil), body: nil)
     }

@@ -23,7 +23,7 @@ extension Network {
         headers = interceptor.setupingInitialHeaders(headers, boundary: boundary)
         
         // Create the initial request to be intercepted
-        let requestToBeIntercepted = InterceptorRequest(url: url, method: method, headers: headers, timeout: interceptor.timeout, body: body, multiparts: multiparts)
+        let requestToBeIntercepted = InterceptorRequest(url: url, method: method, headers: headers, timeout: path.timeout ?? interceptor.timeout, body: body, multiparts: multiparts)
         
         // Intercept the request
         let interceptedRequest = await interceptor.intercept(request: requestToBeIntercepted)
@@ -31,8 +31,8 @@ extension Network {
         return await createDataTask(with: interceptedRequest)
     }
     
-    internal func createDataTask(with request: InterceptorRequest) async -> NetworkResult {
-        
+    internal func createDataTask(with request: InterceptorRequest, attempt: Int = 1) async -> NetworkResult {
+
         do {
             let dataAndResponse = try await createDataTask(url: request.url, headers: request.headers, timeout: request.timeout, method: request.method)
             
@@ -60,6 +60,13 @@ extension Network {
             case .response(let data):
                 if (200...299).contains(statusCode) {
                     return .success(response: data)
+                } else if let delay = retryPolicy.delayBeforeRetrying(statusCode: statusCode, attempt: attempt) {
+                    do {
+                        try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                    } catch {
+                        return .cancelled
+                    }
+                    return await createDataTask(with: request, attempt: attempt + 1)
                 } else {
                     return .remoteError(response: data)
                 }
@@ -67,7 +74,7 @@ extension Network {
                 return .localError(error: error)
             case .close: return .cancelled
             case .proceed(let request):
-                return await createDataTask(with: request)
+                return await createDataTask(with: request, attempt: attempt)
             }
         } catch let error {
 

@@ -31,7 +31,7 @@ import NZSocket
 
 | Module | Purpose |
 |---|---|
-| `NZNetwork` | GET/POST/PUT/DELETE requests, multipart bodies, request/response interception, error handling |
+| `NZNetwork` | GET/POST/PUT/PATCH/DELETE/HEAD/OPTIONS requests, multipart bodies, request/response interception, retries, cancellation, error handling |
 | `NZDownload` | Background-friendly file downloads and uploads with progress/pause/resume/cancel |
 | `NZSocket` | WebSocket connections with an `async` message stream and connect/disconnect delegate events |
 | `NZNetworkShared` | Internal helpers (`URL`/`URLRequest`/`Data` extensions) shared by all modules |
@@ -93,6 +93,24 @@ let network = Network(interceptor: AppInterceptor())
 
 Keep it around (e.g. as a singleton or injected dependency) — it owns the underlying `URLSession`.
 
+Optionally, pass a `RetryPolicy` to automatically retry requests that come back with a retryable status code (`429`, `500`, `502`, `503`, `504` by default), using exponential backoff:
+
+```swift
+let network = Network(interceptor: AppInterceptor(), retryPolicy: RetryPolicy(maxAttempts: 3))
+
+// Fully customized:
+let network = Network(
+    interceptor: AppInterceptor(),
+    retryPolicy: RetryPolicy(
+        maxAttempts: 4,
+        retryableStatusCodes: [429, 503],
+        backoff: { attempt in Double(attempt) * 0.5 }   // 0.5s, 1s, 1.5s, ...
+    )
+)
+```
+
+No `retryPolicy` argument (or `.none`) disables retries — the default, unchanged behavior. Retries only apply to non-2xx server responses; transport failures (no connection, DNS errors, timeouts) and cancellations are never retried automatically — handle those yourself in the interceptor if you need to.
+
 ### 1.3 Perform requests
 
 `Network` exposes two parallel API styles: a **result-based** API (`NetworkResult`) and a **throwing** API (`...Throwable`). Use whichever fits your call site.
@@ -139,11 +157,23 @@ do {
 }
 ```
 
-Available methods on both APIs: `get`, `post(payload:)`, `put(payload:)`, `delete`, `delete(body:)`, plus `...Throwable` equivalents (`getThrowable`, `postThrowable`, `putThrowable`, `deleteThrowable`).
+Available methods on both APIs: `get`, `post(payload:)`, `put(payload:)`, `patch(payload:)`, `delete`, `delete(body:)`, `head`, `options`, plus `...Throwable` equivalents (`getThrowable`, `postThrowable`, `putThrowable`, `patchThrowable`, `deleteThrowable`, `headThrowable`, `optionsThrowable`).
 
-### 1.4 Cancelling a request
+### 1.4 Per-request timeout
 
-Every `Network` method is `async`, so the idiomatic way to cancel one is to wrap the call in a Swift `Task` and cancel that task — cancellation propagates straight through to the underlying `URLSessionTask`:
+`Path` accepts an optional `timeout`, which overrides the interceptor's default `timeout` for just that one request:
+
+```swift
+let result = await network.get(path: Path(route: "/slow-endpoint", queryItems: nil, timeout: 60))
+```
+
+Omit it (the default) to use `interceptor.timeout` as before.
+
+### 1.5 Cancelling a request
+
+There are two ways to cancel a request.
+
+**Wrap it in a `Task`** — every `Network` method is `async`, so the idiomatic Swift concurrency approach is to cancel the enclosing `Task`; cancellation propagates straight through to the underlying `URLSessionTask`:
 
 ```swift
 let task = Task {
@@ -174,7 +204,24 @@ do {
 }
 ```
 
-### 1.5 Multipart requests
+**Or use the `...Cancellable` handle API** if you'd rather not manage your own `Task`. It returns a `NetworkTask` handle immediately, so you can hold onto it (e.g. as a property) and cancel it from anywhere, then await the result separately:
+
+```swift
+let request = network.getCancellable(path: Path(route: "/users", queryItems: nil))
+self.currentRequest = request   // hang onto it so you can cancel later
+
+Task {
+    let result = await request.result
+    // ...
+}
+
+// later:
+self.currentRequest?.cancel()
+```
+
+Also available: `postCancellable(path:payload:)`, `putCancellable(path:payload:)`, `patchCancellable(path:payload:)`, `deleteCancellable(path:)`, `deleteCancellable(path:body:)`.
+
+### 1.6 Multipart requests
 
 Define your form fields by conforming to `Part`:
 
@@ -212,7 +259,7 @@ let data = try await network.postThrowable(path: Path(route: "/profile", queryIt
 
 The framework builds the `multipart/form-data` body and `Content-Type` boundary header for you.
 
-### 1.6 `MIMEType`
+### 1.7 `MIMEType`
 
 A typed representation of common MIME types, used for multipart parts:
 
