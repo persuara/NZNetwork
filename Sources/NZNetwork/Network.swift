@@ -211,7 +211,7 @@ public struct Path {
 
 
 /// An enumeration representing different possible outcomes of a network request.
-public enum NetworkResult {
+public enum NetworkResult: Sendable {
     /// The network request returned a data object.
     /// This case indicates a successful network response with a successful status code (200...299).
     case success(response: Data)
@@ -234,7 +234,7 @@ public enum NetworkResult {
     case cancelled
 }
 
-public class Network: NSObject, NetworkProtocol {
+public class Network: NSObject, NetworkProtocol, @unchecked Sendable {
 
     internal let interceptor: InterceptorProtocol
 
@@ -256,17 +256,21 @@ public class Network: NSObject, NetworkProtocol {
     }
 
     // MARK: - SESSION
-    internal lazy var session: URLSession = {
-        let configuration = configuration
-        let session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
-        return session
-    }()
 
-    private lazy var configuration: URLSessionConfiguration = {
-        let configuration = URLSessionConfiguration.default
-        sessionConfiguration.apply(to: configuration)
-        return configuration
-    }()
+    /// Lazily created, lock-protected so concurrent first access from multiple tasks can't race
+    /// (a plain `lazy var` is not thread-safe and could otherwise create two sessions).
+    private let sessionBox = Locked<URLSession?>(nil)
+
+    internal var session: URLSession {
+        sessionBox.withLock { existing in
+            if let existing { return existing }
+            let configuration = URLSessionConfiguration.default
+            sessionConfiguration.apply(to: configuration)
+            let newSession = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
+            existing = newSession
+            return newSession
+        }
+    }
     
     public func get(path: Path) async -> NetworkResult {
         await proceedWithRequest(path: path, method: .get, body: nil)

@@ -5,7 +5,7 @@ import Foundation
 /// Retries are only applied to non-2xx responses that come back from the server (e.g. `429`,
 /// `503`) — transport-level failures (no connection, DNS failure, etc.) and cancellations are
 /// never retried automatically.
-public struct RetryPolicy {
+public struct RetryPolicy: Sendable {
 
     /// The maximum number of attempts for a single request, including the first one.
     /// `1` (the default via `.none`) disables retries entirely.
@@ -17,7 +17,7 @@ public struct RetryPolicy {
     /// Computes the delay, in seconds, to wait before the given attempt.
     ///
     /// - Parameter attempt: The attempt number that just failed (`1` for the first attempt).
-    public var backoff: (_ attempt: Int) -> TimeInterval
+    public var backoff: @Sendable (_ attempt: Int) -> TimeInterval
 
     /// Creates a retry policy.
     ///
@@ -28,7 +28,7 @@ public struct RetryPolicy {
     public init(
         maxAttempts: Int = 3,
         retryableStatusCodes: Set<Int> = [429, 500, 502, 503, 504],
-        backoff: @escaping (_ attempt: Int) -> TimeInterval = { attempt in pow(2.0, Double(attempt - 1)) }
+        backoff: @escaping @Sendable (_ attempt: Int) -> TimeInterval = { attempt in pow(2.0, Double(attempt - 1)) }
     ) {
         self.maxAttempts = maxAttempts
         self.retryableStatusCodes = retryableStatusCodes

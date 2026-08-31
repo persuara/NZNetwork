@@ -3,7 +3,7 @@ import Foundation
 /// A handle to a single in-flight `Network` request, obtained from one of the `...Cancellable`
 /// methods below. Unlike the plain `async` request methods, this lets you cancel the request
 /// from outside without having to manage your own wrapping `Task`.
-public final class NetworkTask {
+public final class NetworkTask: Sendable {
 
     private let task: Task<NetworkResult, Never>
 
