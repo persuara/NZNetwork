@@ -89,6 +89,20 @@ public protocol NZDownloaderDelegate: NSObjectProtocol {
     ///   - session: The session that became invalid.
     ///   - error: An optional error indicating the cause of invalidation.
     func downloader(_ downloader: NZDownloaderProtocol, _ session: URLSession, didBecomeInvalidWithError: Error?)
+
+    /// Handles an authentication challenge presented by the underlying `URLSession` — e.g. for
+    /// SSL/certificate pinning, client certificate authentication, or Basic/NTLM credentials.
+    ///
+    /// - Parameter challenge: The challenge presented by the server.
+    /// - Returns: The disposition to use, and a credential when the disposition requires one.
+    func downloader(_ downloader: NZDownloaderProtocol, didReceive challenge: URLAuthenticationChallenge) async -> (URLSession.AuthChallengeDisposition, URLCredential?)
+}
+
+public extension NZDownloaderDelegate {
+    /// Default implementation, which performs the system's default handling.
+    func downloader(_ downloader: NZDownloaderProtocol, didReceive challenge: URLAuthenticationChallenge) async -> (URLSession.AuthChallengeDisposition, URLCredential?) {
+        (.performDefaultHandling, nil)
+    }
 }
 
 /// A protocol that defines methods for task-related delegate callbacks.

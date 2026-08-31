@@ -213,7 +213,7 @@ public enum NetworkResult {
     case cancelled
 }
 
-public class Network: NetworkProtocol {
+public class Network: NSObject, NetworkProtocol {
 
     internal let interceptor: InterceptorProtocol
 
@@ -227,12 +227,13 @@ public class Network: NetworkProtocol {
         self.interceptor = interceptor
         self.retryPolicy = retryPolicy
         self.sessionConfiguration = sessionConfiguration
+        super.init()
     }
 
     // MARK: - SESSION
     internal lazy var session: URLSession = {
         let configuration = configuration
-        let session = URLSession(configuration: configuration, delegate: nil, delegateQueue: nil)
+        let session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
         return session
     }()
 

@@ -30,11 +30,21 @@ public protocol NZSocketDelegate: AnyObject {
     ///   - code: The close code sent by the server (or `.invalid` on a local/transport failure).
     ///   - reason: An optional, server-supplied reason for the closure.
     func socket(_ socket: NZSocketProtocol, didDisconnectWithCode code: URLSessionWebSocketTask.CloseCode, reason: Data?)
+
+    /// Handles an authentication challenge presented by the underlying `URLSession` — e.g. for
+    /// SSL/certificate pinning, client certificate authentication, or Basic/NTLM credentials.
+    ///
+    /// - Parameter challenge: The challenge presented by the server.
+    /// - Returns: The disposition to use, and a credential when the disposition requires one.
+    func socket(_ socket: NZSocketProtocol, didReceive challenge: URLAuthenticationChallenge) async -> (URLSession.AuthChallengeDisposition, URLCredential?)
 }
 
 public extension NZSocketDelegate {
     func socket(_ socket: NZSocketProtocol, didConnectWithProtocol protocol: String?) {}
     func socket(_ socket: NZSocketProtocol, didDisconnectWithCode code: URLSessionWebSocketTask.CloseCode, reason: Data?) {}
+    func socket(_ socket: NZSocketProtocol, didReceive challenge: URLAuthenticationChallenge) async -> (URLSession.AuthChallengeDisposition, URLCredential?) {
+        (.performDefaultHandling, nil)
+    }
 }
 
 /// A protocol that defines methods for opening, using, and closing a WebSocket connection.

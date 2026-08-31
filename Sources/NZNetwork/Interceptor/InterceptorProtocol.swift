@@ -52,6 +52,14 @@ public protocol InterceptorProtocol {
     /// - Returns: The modified `InterceptorResponse` after interception.
     /// This api added to provided error handling for interception proccesses.
     func interceptThrowable(response: InterceptorResponse) async throws -> InterceptorResponse
+
+    /// Handles an authentication challenge presented by the underlying `URLSession` — e.g. for
+    /// SSL/certificate pinning (`NSURLAuthenticationMethodServerTrust`), client certificate
+    /// authentication, or Basic/NTLM credentials.
+    ///
+    /// - Parameter challenge: The challenge presented by the server.
+    /// - Returns: The disposition to use, and a credential when the disposition requires one.
+    func handle(challenge: URLAuthenticationChallenge) async -> (URLSession.AuthChallengeDisposition, URLCredential?)
 }
 
 // MARK: - Default Implementation
@@ -135,5 +143,11 @@ public extension InterceptorProtocol {
     /// - Returns: The original `InterceptorResponse`.
     func interceptThrowable(response: InterceptorResponse) async throws -> InterceptorResponse {
         response
+    }
+
+    /// Default implementation of challenge handling, which performs the system's default handling
+    /// (equivalent to not implementing a challenge handler at all).
+    func handle(challenge: URLAuthenticationChallenge) async -> (URLSession.AuthChallengeDisposition, URLCredential?) {
+        (.performDefaultHandling, nil)
     }
 }

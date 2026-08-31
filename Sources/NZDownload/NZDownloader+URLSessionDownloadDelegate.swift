@@ -180,6 +180,19 @@ extension NZDownloader: URLSessionDownloadDelegate {
         }
     }
 
+    /// Forwards session-wide authentication challenges (SSL pinning, client certificates,
+    /// Basic/NTLM credentials, ...) to `delegate.downloader(_:didReceive:)`.
+    open func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        guard let delegate else {
+            completionHandler(.performDefaultHandling, nil)
+            return
+        }
+        Task {
+            let (disposition, credential) = await delegate.downloader(self, didReceive: challenge)
+            completionHandler(disposition, credential)
+        }
+    }
+
     /// Tells the delegate that all messages enqueued for a background session have been delivered.
     ///
     /// Call this from `application(_:handleEventsForBackgroundURLSession:completionHandler:)` by

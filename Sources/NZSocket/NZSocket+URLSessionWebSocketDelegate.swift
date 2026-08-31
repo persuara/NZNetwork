@@ -23,4 +23,17 @@ extension NZSocket: URLSessionWebSocketDelegate {
         messageContinuation?.finish()
         delegate?.socket(self, didDisconnectWithCode: closeCode, reason: reason)
     }
+
+    /// Forwards session-wide authentication challenges (SSL pinning, client certificates,
+    /// Basic/NTLM credentials, ...) to `delegate.socket(_:didReceive:)`.
+    public func urlSession(_ session: URLSession, didReceive challenge: URLAuthenticationChallenge, completionHandler: @escaping (URLSession.AuthChallengeDisposition, URLCredential?) -> Void) {
+        guard let delegate else {
+            completionHandler(.performDefaultHandling, nil)
+            return
+        }
+        Task {
+            let (disposition, credential) = await delegate.socket(self, didReceive: challenge)
+            completionHandler(disposition, credential)
+        }
+    }
 }
