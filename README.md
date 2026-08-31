@@ -520,6 +520,24 @@ socket.disconnect(closeCode: .normalClosure, reason: nil)
 
 `send`/`sendPing` throw `NZSocketError.notConnected` if called before `connect(to:protocols:)` or after the connection has closed.
 
+#### JSON convenience
+
+If your server exchanges JSON, skip the manual `Encodable`/`Decodable` juggling:
+
+```swift
+struct ChatMessage: Codable { let text: String }
+
+try await socket.send(ChatMessage(text: "hello"))   // encodes and sends as a .string message
+
+Task {
+    for try await message: ChatMessage in socket.messages() {
+        print(message.text)
+    }
+}
+```
+
+`send<T: Encodable>(_:encoder:)` and `messages<T: Decodable>(decoder:) -> AsyncThrowingStream<T, Error>` are built on top of the raw `.string`/`.data` API — the generic `messages()` overload is resolved by the type annotation on the `for try await` loop. It's subject to the same "call once per connection" rule as the raw `messages()`, since it's implemented on top of it.
+
 ### 3.4 Lifecycle delegate
 
 ```swift
@@ -535,9 +553,38 @@ final class ChatSocketHandler: NZSocketDelegate {
 socket.delegate = ChatSocketHandler()
 ```
 
-All delegate methods have default no-op implementations (or, for `didReceive challenge:`, the system's default handling), so you only implement what you need. `socket.isConnected` reflects the current connection state at any time.
+All delegate methods have default no-op implementations (or, for `didReceive challenge:`, the system's default handling), so you only implement what you need. `socket.isConnected` reflects the current connection state at any time. There's also `socket(_:willReconnectAttempt:after:)`, covered next.
 
 `NZSocket`'s initializer also accepts a `sessionConfiguration: NetworkSessionConfiguration` for cellular access, connectivity waiting, etc. — same type used by `Network`/`NZDownloader` (see §1.2).
+
+### 3.5 Auto-reconnect
+
+By default, if the connection drops unexpectedly (not from an explicit `disconnect()` call), the `messages()` stream just finishes or throws — you'd have to detect that and call `connect(to:protocols:)` again yourself. Pass a `reconnectPolicy: NZSocketReconnectPolicy` to have `NZSocket` do that automatically, with backoff:
+
+```swift
+let socket = NZSocket(baseURL: "api.example.com", reconnectPolicy: NZSocketReconnectPolicy(maxAttempts: 5))
+
+// Fully customized:
+let socket = NZSocket(
+    baseURL: "api.example.com",
+    reconnectPolicy: NZSocketReconnectPolicy(
+        maxAttempts: 10,
+        backoff: { attempt in Double(attempt) * 2 }   // 2s, 4s, 6s, ...
+    )
+)
+```
+
+While auto-reconnect is in effect, an existing `for try await message in socket.messages()` loop keeps running transparently — the stream doesn't finish on a drop that's about to be retried, only once reconnect attempts are exhausted (or the policy is `.none`, the default) or you call `disconnect()` yourself. `socket(_:willReconnectAttempt:after:)` fires on your delegate before each attempt, if you want to show connecting UI. The reconnect attempt counter resets to zero after each successful reconnection.
+
+### 3.6 Heartbeat / keep-alive
+
+`sendPing()` exists, but nothing calls it periodically for you by default. Pass a `heartbeatInterval` to have `NZSocket` send a ping automatically on a schedule while connected:
+
+```swift
+let socket = NZSocket(baseURL: "api.example.com", heartbeatInterval: 30)   // ping every 30s
+```
+
+The heartbeat starts on a successful connection and stops on disconnect (whether explicit or unexpected). Omit `heartbeatInterval` (the default, `nil`) to disable it — same as before this feature existed.
 
 ---
 
