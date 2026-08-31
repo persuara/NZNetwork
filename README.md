@@ -1,5 +1,7 @@
 # Network
 
+[![CI](https://github.com/sacondeinc/networkiOS/actions/workflows/ci.yml/badge.svg)](https://github.com/sacondeinc/networkiOS/actions/workflows/ci.yml)
+
 A lightweight, protocol-oriented networking framework for iOS built on `URLSession` and Swift concurrency (`async`/`await`). It provides a small, composable core for REST-style requests (`NZNetwork`), a dedicated file downloader/uploader with progress tracking (`NZDownload`), and shared URL/URLRequest helpers (`NZNetworkShared`).
 
 ## Requirements
@@ -37,6 +39,14 @@ import NZReachability
 | `NZSocket` | WebSocket connections with an `async` message stream and connect/disconnect delegate events |
 | `NZReachability` | Online/offline and connection-type monitoring via `NWPathMonitor` |
 | `NZNetworkShared` | Internal helpers (`URL`/`URLRequest`/`Data` extensions) shared by all modules |
+
+## Running tests
+
+```bash
+xcodebuild test -scheme NZNetwork -destination 'platform=iOS Simulator,name=iPhone 17'
+```
+
+(Swap in whatever simulator name you have installed.) CI runs the same command — plus a plain `build` — on every push and pull request to `main` via [`.github/workflows/ci.yml`](.github/workflows/ci.yml). Test targets: `NZNetworkSharedTests` (URL/`URLRequest` construction, `NetworkSessionConfiguration`), `NZNetworkTests` (`RetryPolicy`, `FormBody`, `MIMEType`, multipart body building, and end-to-end `Network` request/retry/cancellation behavior via a stub `URLProtocol`), and `NZSocketTests` (`NZSocketReconnectPolicy`, message bridging).
 
 ---
 
