@@ -60,4 +60,32 @@ final class MultipartBodyTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: fileURL.path))
         XCTAssertTrue(fileURL.path.hasPrefix(FileManager.default.temporaryDirectory.path))
     }
+
+    func testFilePartStreamsFromDiskAndMatchesEquivalentDataPart() throws {
+        let sourceContent = Data("this came from disk".utf8)
+        let sourceURL = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension("txt")
+        try sourceContent.write(to: sourceURL)
+        defer { try? FileManager.default.removeItem(at: sourceURL) }
+
+        let filePart = FilePart(name: "attachment", filename: "notes.txt", fileURL: sourceURL, mimeType: .text(subType: .plain(charset: .utf8)))
+        let equivalentDataPart = TestPart(name: "attachment", filename: "notes.txt", body: sourceContent, value: nil, mimeType: .text(subType: .plain(charset: .utf8)))
+
+        let fromFile = interceptor.multipartBodyFileURL(multiparts: [filePart], boundary: "BOUNDARY")
+        let fromData = interceptor.multipartBodyFileURL(multiparts: [equivalentDataPart], boundary: "BOUNDARY")
+        defer {
+            try? FileManager.default.removeItem(at: fromFile)
+            try? FileManager.default.removeItem(at: fromData)
+        }
+
+        XCTAssertEqual(try Data(contentsOf: fromFile), try Data(contentsOf: fromData))
+    }
+
+    func testFilePartDefaultsFilenameAndMimeTypeFromURL() {
+        let fileURL = URL(fileURLWithPath: "/tmp/photo.jpg")
+        let part = FilePart(name: "avatar", fileURL: fileURL)
+        XCTAssertEqual(part.filename, "photo.jpg")
+        XCTAssertEqual(part.mimeType?.mimeType, "image/jpeg")
+        XCTAssertNil(part.body)
+        XCTAssertEqual(part.bodyFileURL, fileURL)
+    }
 }
