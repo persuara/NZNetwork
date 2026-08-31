@@ -10,7 +10,7 @@ let package = Package(
         // Products define the executables and libraries a package produces, and make them visible to other packages.
         .library(
             name: "NZNetwork",
-            targets: ["NZNetwork", "NZDownload"]),
+            targets: ["NZNetwork", "NZDownload", "NZSocket"]),
     ],
     dependencies: [
         // Dependencies declare other packages that this package depends on.
@@ -24,6 +24,9 @@ let package = Package(
             dependencies: ["NZNetworkShared"]),
         .target(
             name: "NZDownload",
+            dependencies: ["NZNetworkShared"]),
+        .target(
+            name: "NZSocket",
             dependencies: ["NZNetworkShared"]),
         .target(
             name: "NZNetworkShared",
