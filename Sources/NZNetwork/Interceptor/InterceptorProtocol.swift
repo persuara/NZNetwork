@@ -119,14 +119,16 @@ public extension InterceptorProtocol {
             if let value = aPart.value {
                 body.append(value)
             }
-            
-            if let data = aPart.body {
+
+            if let fileURL = aPart.bodyFileURL, let fileData = try? Data(contentsOf: fileURL) {
+                body.append(fileData)
+            } else if let data = aPart.body {
                 body.append(data)
             }
-            
+
             body.append("\r\n")
         }
-        
+
         body.append(boundaryPrefix.appending("--"))
 
         return body
@@ -173,7 +175,9 @@ public extension InterceptorProtocol {
                 write(value)
             }
 
-            if let data = aPart.body {
+            if let sourceFileURL = aPart.bodyFileURL {
+                fileHandle.writeContents(ofFileAt: sourceFileURL)
+            } else if let data = aPart.body {
                 fileHandle.write(data)
             }
 
@@ -213,5 +217,27 @@ public extension InterceptorProtocol {
     /// (equivalent to not implementing a challenge handler at all).
     func handle(challenge: URLAuthenticationChallenge) async -> (URLSession.AuthChallengeDisposition, URLCredential?) {
         (.performDefaultHandling, nil)
+    }
+}
+
+private extension FileHandle {
+    /// Appends the contents of the file at `sourceURL`, reading it in bounded chunks rather than
+    /// loading it into memory all at once — the point of `FilePart`/`bodyFileURL` for large files.
+    func writeContents(ofFileAt sourceURL: URL) {
+        guard let input = InputStream(url: sourceURL) else { return }
+        input.open()
+        defer { input.close() }
+
+        let bufferSize = 64 * 1024
+        var buffer = [UInt8](repeating: 0, count: bufferSize)
+
+        while input.hasBytesAvailable {
+            let bytesRead = input.read(&buffer, maxLength: bufferSize)
+            if bytesRead > 0 {
+                write(Data(bytes: buffer, count: bytesRead))
+            } else {
+                break
+            }
+        }
     }
 }
