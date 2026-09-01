@@ -1,4 +1,4 @@
-# Network
+# NZNetwork
 
 [![CI](https://github.com/sacondeinc/networkiOS/actions/workflows/ci.yml/badge.svg)](https://github.com/sacondeinc/networkiOS/actions/workflows/ci.yml)
 
