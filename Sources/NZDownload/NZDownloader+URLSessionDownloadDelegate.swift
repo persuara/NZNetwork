@@ -193,6 +193,18 @@ extension NZDownloader: URLSessionDownloadDelegate {
         }
     }
 
+    /// Forwards HTTP redirects to `delegate.downloader(_:willPerformRedirect:to:)`.
+    open func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
+        guard let delegate else {
+            completionHandler(request)
+            return
+        }
+        Task {
+            let redirectRequest = await delegate.downloader(self, willPerformRedirect: response, to: request)
+            completionHandler(redirectRequest)
+        }
+    }
+
     /// Tells the delegate that all messages enqueued for a background session have been delivered.
     ///
     /// Call this from `application(_:handleEventsForBackgroundURLSession:completionHandler:)` by

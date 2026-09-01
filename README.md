@@ -21,13 +21,14 @@ dependencies: [
 
 Or in Xcode: **File → Add Package Dependencies…** and paste the repository URL.
 
-The library product is called `NZNetwork` and bundles four targets: `NZNetwork` (requests), `NZDownload` (downloads/uploads), `NZSocket` (WebSockets), and `NZReachability` (network status monitoring). Import whichever you need:
+The library product is called `NZNetwork` and bundles five targets: `NZNetwork` (requests), `NZDownload` (downloads/uploads), `NZSocket` (WebSockets), `NZReachability` (network status monitoring), and `NZNetworkShared` (types used across the others, like `NetworkSessionConfiguration` and `CertificatePinning`). Import whichever you need — `NZNetworkShared` is a dependency of the other four, but its own public types (unlike `NZNetwork`'s etc.) aren't automatically visible unless you import it directly too:
 
 ```swift
 import NZNetwork
 import NZDownload
 import NZSocket
 import NZReachability
+import NZNetworkShared
 ```
 
 ## Package structure
@@ -97,22 +98,48 @@ final class AppInterceptor: InterceptorProtocol {
 - `.close` — cancel the request.
 - `.proceed(request:)` — resend a (possibly modified) request, e.g. after a token refresh.
 
-`InterceptorProtocol` also has a `handle(challenge:)` method for responding to authentication challenges from the underlying `URLSession` — SSL/certificate pinning, client certificate authentication, or Basic/NTLM credentials. The default implementation performs the system's default handling (unchanged behavior if you don't override it):
+`InterceptorProtocol` also has a `handle(challenge:)` method for responding to authentication challenges from the underlying `URLSession` — SSL/certificate pinning, client certificate authentication, or Basic/NTLM credentials. The default implementation performs the system's default handling (unchanged behavior if you don't override it). For certificate pinning specifically, use the built-in `CertificatePinning` helper instead of writing `SecTrust` comparison code by hand:
+
+```swift
+import NZNetworkShared   // CertificatePinning lives here
+
+final class AppInterceptor: InterceptorProtocol {
+    // ...
+
+    private let pinning = CertificatePinning(pinnedHashes: [
+        "k3XT+2e2Nq3s+E2/w7wKKVArgOJ/HydIQNfEmoWDA/o="   // base64 SHA-256 of the pinned key's SPKI
+    ])
+
+    func handle(challenge: URLAuthenticationChallenge) async -> (URLSession.AuthChallengeDisposition, URLCredential?) {
+        pinning.evaluate(challenge) ?? (.performDefaultHandling, nil)
+    }
+}
+```
+
+`CertificatePinning` pins against the Subject Public Key Info (SPKI) of the server's certificate chain — the approach OWASP recommends, since it survives certificate renewal as long as the key doesn't change. `evaluate(_:)` returns `nil` for non-server-trust challenges (so you can fall through to your own handling for client certs, Basic/NTLM, etc.), `.useCredential` if the chain is both system-trusted and contains a pinned key, or `.cancelAuthenticationChallenge` otherwise. Generate a pin hash with:
+
+```bash
+openssl x509 -in cert.pem -pubkey -noout | openssl pkey -pubin -outform der | openssl dgst -sha256 -binary | openssl enc -base64
+```
+
+`InterceptorProtocol` also has a `redirect(from:to:)` method for handling HTTP redirects (3xx responses) — e.g. to strip an `Authorization` header before following a redirect to a different host, or to prevent the redirect entirely. The default follows every redirect unchanged:
 
 ```swift
 final class AppInterceptor: InterceptorProtocol {
     // ...
 
-    func handle(challenge: URLAuthenticationChallenge) async -> (URLSession.AuthChallengeDisposition, URLCredential?) {
-        guard challenge.protectionSpace.authenticationMethod == NSURLAuthenticationMethodServerTrust,
-              let serverTrust = challenge.protectionSpace.serverTrust,
-              isPinnedCertificate(serverTrust) else {
-            return (.performDefaultHandling, nil)
+    func redirect(from response: HTTPURLResponse, to newRequest: URLRequest) async -> URLRequest? {
+        guard newRequest.url?.host == response.url?.host else {
+            var sameOriginOnlyRequest = newRequest
+            sameOriginOnlyRequest.setValue(nil, forHTTPHeaderField: "Authorization")
+            return sameOriginOnlyRequest
         }
-        return (.useCredential, URLCredential(trust: serverTrust))
+        return newRequest   // same host — follow as-is
     }
 }
 ```
+
+Return `nil` to stop following the redirect and treat the redirect response itself as final. `NZDownloaderDelegate.downloader(_:willPerformRedirect:to:)` and `NZSocketDelegate.socket(_:willPerformRedirect:to:)` work the same way for `NZDownload`/`NZSocket`.
 
 ### 1.2 Create a `Network` instance
 

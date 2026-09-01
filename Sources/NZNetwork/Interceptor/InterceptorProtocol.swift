@@ -71,6 +71,18 @@ public protocol InterceptorProtocol {
     /// - Parameter challenge: The challenge presented by the server.
     /// - Returns: The disposition to use, and a credential when the disposition requires one.
     func handle(challenge: URLAuthenticationChallenge) async -> (URLSession.AuthChallengeDisposition, URLCredential?)
+
+    /// Decides how to handle an HTTP redirect (a 3xx response) — e.g. to strip an `Authorization`
+    /// header before following a redirect to a different host, or to prevent the redirect
+    /// entirely.
+    ///
+    /// - Parameters:
+    ///   - response: The redirect response that triggered this.
+    ///   - newRequest: The request `URLSession` would follow by default.
+    /// - Returns: The request to actually follow (a modified copy of `newRequest`, or
+    ///   `newRequest` unchanged to follow it as-is), or `nil` to stop following redirects and
+    ///   treat `response` as the final response.
+    func redirect(from response: HTTPURLResponse, to newRequest: URLRequest) async -> URLRequest?
 }
 
 // MARK: - Default Implementation
@@ -217,6 +229,12 @@ public extension InterceptorProtocol {
     /// (equivalent to not implementing a challenge handler at all).
     func handle(challenge: URLAuthenticationChallenge) async -> (URLSession.AuthChallengeDisposition, URLCredential?) {
         (.performDefaultHandling, nil)
+    }
+
+    /// Default implementation, which follows every redirect unchanged (the system's default
+    /// behavior — equivalent to not implementing a redirect handler at all).
+    func redirect(from response: HTTPURLResponse, to newRequest: URLRequest) async -> URLRequest? {
+        newRequest
     }
 }
 

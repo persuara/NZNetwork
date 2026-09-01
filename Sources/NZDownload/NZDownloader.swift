@@ -96,12 +96,28 @@ public protocol NZDownloaderDelegate: NSObjectProtocol {
     /// - Parameter challenge: The challenge presented by the server.
     /// - Returns: The disposition to use, and a credential when the disposition requires one.
     func downloader(_ downloader: NZDownloaderProtocol, didReceive challenge: URLAuthenticationChallenge) async -> (URLSession.AuthChallengeDisposition, URLCredential?)
+
+    /// Decides how to handle an HTTP redirect (a 3xx response) for a task — e.g. to strip an
+    /// `Authorization` header before following a redirect to a different host, or to prevent the
+    /// redirect entirely.
+    ///
+    /// - Parameters:
+    ///   - response: The redirect response that triggered this.
+    ///   - newRequest: The request `URLSession` would follow by default.
+    /// - Returns: The request to actually follow, or `nil` to stop following redirects and treat
+    ///   `response` as the final response.
+    func downloader(_ downloader: NZDownloaderProtocol, willPerformRedirect response: HTTPURLResponse, to newRequest: URLRequest) async -> URLRequest?
 }
 
 public extension NZDownloaderDelegate {
     /// Default implementation, which performs the system's default handling.
     func downloader(_ downloader: NZDownloaderProtocol, didReceive challenge: URLAuthenticationChallenge) async -> (URLSession.AuthChallengeDisposition, URLCredential?) {
         (.performDefaultHandling, nil)
+    }
+
+    /// Default implementation, which follows every redirect unchanged.
+    func downloader(_ downloader: NZDownloaderProtocol, willPerformRedirect response: HTTPURLResponse, to newRequest: URLRequest) async -> URLRequest? {
+        newRequest
     }
 }
 

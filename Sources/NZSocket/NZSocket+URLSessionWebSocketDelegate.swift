@@ -39,4 +39,16 @@ extension NZSocket: URLSessionWebSocketDelegate {
             completionHandler(disposition, credential)
         }
     }
+
+    /// Forwards HTTP redirects (during the WebSocket handshake) to `delegate.socket(_:willPerformRedirect:to:)`.
+    public func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse, newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
+        guard let delegate else {
+            completionHandler(request)
+            return
+        }
+        Task {
+            let redirectRequest = await delegate.socket(self, willPerformRedirect: response, to: request)
+            completionHandler(redirectRequest)
+        }
+    }
 }

@@ -47,6 +47,17 @@ public protocol NZSocketDelegate: AnyObject {
     ///   - attempt: The 1-based attempt number about to be made.
     ///   - delay: How long the socket will wait before attempting to reconnect.
     func socket(_ socket: NZSocketProtocol, willReconnectAttempt attempt: Int, after delay: TimeInterval)
+
+    /// Decides how to handle an HTTP redirect (a 3xx response) during the WebSocket handshake —
+    /// e.g. to strip an `Authorization` header before following a redirect to a different host,
+    /// or to prevent the redirect entirely.
+    ///
+    /// - Parameters:
+    ///   - response: The redirect response that triggered this.
+    ///   - newRequest: The request `URLSession` would follow by default.
+    /// - Returns: The request to actually follow, or `nil` to stop following redirects and treat
+    ///   `response` as the final response.
+    func socket(_ socket: NZSocketProtocol, willPerformRedirect response: HTTPURLResponse, to newRequest: URLRequest) async -> URLRequest?
 }
 
 public extension NZSocketDelegate {
@@ -56,6 +67,9 @@ public extension NZSocketDelegate {
         (.performDefaultHandling, nil)
     }
     func socket(_ socket: NZSocketProtocol, willReconnectAttempt attempt: Int, after delay: TimeInterval) {}
+    func socket(_ socket: NZSocketProtocol, willPerformRedirect response: HTTPURLResponse, to newRequest: URLRequest) async -> URLRequest? {
+        newRequest
+    }
 }
 
 /// A protocol that defines methods for opening, using, and closing a WebSocket connection.
