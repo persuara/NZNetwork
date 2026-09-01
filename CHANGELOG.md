@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [1.11.0] - 2026-09-01
+
+### Added
+- `InterceptorProtocol.redirect(from:to:)`, `NZDownloaderDelegate.downloader(_:willPerformRedirect:to:)`, and `NZSocketDelegate.socket(_:willPerformRedirect:to:)` — inspect, modify, or cancel HTTP redirects (3xx responses), e.g. to strip an `Authorization` header before following a redirect to a different host. Mirrors the existing `handle(challenge:)` pattern; defaults to following every redirect unchanged.
+- `CertificatePinning` (`NZNetworkShared`) — pins against SPKI SHA-256 hashes (the OWASP-recommended, renewal-friendly approach) for RSA 2048/4096 and EC P-256/P-384 keys, plugging directly into `handle(challenge:)` instead of requiring hand-written `SecTrust` comparison code.
+
+## [1.10.0] - 2026-09-01
+
+### Added
+- `Network.stream(path:chunkSize:)` and `streamLines(path:)` — stream the response body incrementally via `URLSession.bytes(for:)` instead of buffering the whole thing, for Server-Sent Events, newline-delimited JSON, or any endpoint where processing should start before the response finishes. `@available(iOS 15.0, *)`, since `bytes(for:)` (unlike `data(for:)`) isn't backported to iOS 13; GET-only, run through the interceptor for headers/auth, throw `NetworkError.remoteError` on a non-2xx status before any chunk is yielded, and don't participate in `RetryPolicy`.
+- `CHANGELOG.md`, covering all releases back to 1.0.0.
+
 ## [1.9.0] - 2026-09-01
 
 ### Added
@@ -92,6 +104,8 @@ All defaults preserve each type's prior behavior exactly, so existing callers ar
 - Typed `MIMEType` representation for multipart bodies.
 - `NZDownload`: file upload/download tasks with progress tracking, pause/resume/cancel, and resumable downloads via resume data.
 
+[1.11.0]: https://github.com/persuara/network/compare/1.10.0...1.11.0
+[1.10.0]: https://github.com/persuara/network/compare/1.9.0...1.10.0
 [1.9.0]: https://github.com/persuara/network/compare/1.8.0...1.9.0
 [1.8.0]: https://github.com/persuara/network/compare/1.7.0...1.8.0
 [1.7.0]: https://github.com/persuara/network/compare/1.6.0...1.7.0
