@@ -46,7 +46,7 @@ import NZReachability
 xcodebuild test -scheme NZNetwork -destination 'platform=iOS Simulator,name=iPhone 17'
 ```
 
-(Swap in whatever simulator name you have installed.) CI runs the same command — plus a plain `build` — on every push and pull request to `main` via [`.github/workflows/ci.yml`](.github/workflows/ci.yml). Test targets: `NZNetworkSharedTests` (URL/`URLRequest` construction, `NetworkSessionConfiguration`), `NZNetworkTests` (`RetryPolicy`, `FormBody`, `MIMEType`, multipart body building, and end-to-end `Network` request/retry/cancellation behavior via a stub `URLProtocol`), and `NZSocketTests` (`NZSocketReconnectPolicy`, message bridging).
+(Swap in whatever simulator name you have installed.) CI runs the same command — plus a plain `build` — on every push and pull request to `main` via [`.github/workflows/ci.yml`](.github/workflows/ci.yml). Test targets: `NZNetworkSharedTests` (URL/`URLRequest` construction, `NetworkSessionConfiguration`), `NZNetworkTests` (`RetryPolicy`, `FormBody`, `MIMEType`, multipart/`FilePart` body building, streaming responses, and end-to-end `Network` request/retry/cancellation behavior via a stub `URLProtocol`), and `NZSocketTests` (`NZSocketReconnectPolicy`, message bridging).
 
 ---
 
@@ -390,6 +390,24 @@ MIMEType.text(subType: .plain(charset: .utf8))
 MIMEType.sniff(fileExtension: "jpg")   // -> .image(subtype: .jpeg)
 MIMEType(mimeType: "application/custom+type")
 ```
+
+### 1.9 Streaming responses
+
+_Requires iOS 15+._ `get`/`getThrowable` buffer the entire response body before returning it. For Server-Sent Events, newline-delimited JSON, or any endpoint where you want to start processing data as it arrives, use `stream`/`streamLines` instead:
+
+```swift
+// Raw byte chunks
+for try await chunk in network.stream(path: Path(route: "/events", queryItems: nil)) {
+    // process each chunk as it arrives
+}
+
+// Text lines — convenient for SSE ("data: ..." frames) or NDJSON
+for try await line in network.streamLines(path: Path(route: "/events", queryItems: nil)) {
+    print(line)
+}
+```
+
+Both are GET-only, and a non-2xx status code throws `NetworkError.remoteError` before any chunk is yielded. Neither participates in `RetryPolicy` — retrying mid-stream isn't meaningful — and neither is exposed on `NetworkProtocol`, since it's an `@available(iOS 15.0, *)` addition and the protocol itself has no minimum-OS gate. `stream(path:chunkSize:)` takes an optional `chunkSize` (default 16 KB) controlling how many bytes it buffers before yielding.
 
 ---
 
