@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented here. Versions follow [Semantic Versioning](https://semver.org/).
 
+## [1.12.0] - 2026-09-23
+
+### Added
+- macOS support: `Package.swift` now declares `.macOS(.v10_15)` alongside the existing `.iOS(.v13)` floor (10.15 Catalina is the actual minimum needed by `AsyncStream`/`AsyncThrowingStream`/`URLSessionWebSocketTask`, and lines up by release year with iOS 13). All five targets (`NZNetwork`, `NZDownload`, `NZSocket`, `NZReachability`, `NZNetworkShared`) build and pass their test suite natively on macOS, with no UIKit/AppKit dependencies anywhere in the package.
+
+### Fixed
+- Several `@available(iOS ..., *)` annotations only gated iOS and left macOS unconstrained by the bare `*`, which broke the macOS build once a macOS platform floor was declared: `Network.stream`/`streamLines` (iOS 15.0 → also macOS 12.0), `NZDownloaderTaskDelegate.downloader(_:didCreateTask:)` and its `URLSessionTaskDelegate` forwarder (iOS 16.0 → also macOS 13.0).
+- `NZDownloader`'s background session configuration set `sessionSendsLaunchEvents` unconditionally; that property requires macOS 11.0+ (it's been available on iOS since 7.0), so it's now guarded with `if #available(macOS 11.0, *)` — iOS behavior is unchanged.
+
 ## [1.11.0] - 2026-09-01
 
 ### Added
@@ -104,6 +113,7 @@ All defaults preserve each type's prior behavior exactly, so existing callers ar
 - Typed `MIMEType` representation for multipart bodies.
 - `NZDownload`: file upload/download tasks with progress tracking, pause/resume/cancel, and resumable downloads via resume data.
 
+[1.12.0]: https://github.com/persuara/NZNetwork/compare/1.11.0...1.12.0
 [1.11.0]: https://github.com/persuara/network/compare/1.10.0...1.11.0
 [1.10.0]: https://github.com/persuara/network/compare/1.9.0...1.10.0
 [1.9.0]: https://github.com/persuara/network/compare/1.8.0...1.9.0
