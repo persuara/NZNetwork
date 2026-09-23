@@ -2,12 +2,14 @@
 
 [![CI](https://github.com/sacondeinc/networkiOS/actions/workflows/ci.yml/badge.svg)](https://github.com/sacondeinc/networkiOS/actions/workflows/ci.yml)
 
-A lightweight, protocol-oriented networking framework for iOS built on `URLSession` and Swift concurrency (`async`/`await`). It provides a small, composable core for REST-style requests (`NZNetwork`), a dedicated file downloader/uploader with progress tracking (`NZDownload`), and shared URL/URLRequest helpers (`NZNetworkShared`).
+A lightweight, protocol-oriented networking framework for iOS and macOS built on `URLSession` and Swift concurrency (`async`/`await`). It provides a small, composable core for REST-style requests (`NZNetwork`), a dedicated file downloader/uploader with progress tracking (`NZDownload`), and shared URL/URLRequest helpers (`NZNetworkShared`).
 
 ## Requirements
 
-- iOS 13.0+
+- iOS 13.0+ or macOS 10.15+
 - Swift 5.5+ (uses `async`/`await`)
+
+Two APIs need a newer OS regardless of the package's floor above, and are marked accordingly with `@available`: streaming responses (`Network.stream`/`streamLines`) need iOS 15.0+/macOS 12.0+, and the `didCreateTask` download-delegate callback needs iOS 16.0+/macOS 13.0+.
 
 ## Installation — Swift Package Manager
 
@@ -47,7 +49,7 @@ import NZNetworkShared
 xcodebuild test -scheme NZNetwork -destination 'platform=iOS Simulator,name=iPhone 17'
 ```
 
-(Swap in whatever simulator name you have installed.) CI runs the same command — plus a plain `build` — on every push and pull request to `main` via [`.github/workflows/ci.yml`](.github/workflows/ci.yml). Test targets: `NZNetworkSharedTests` (URL/`URLRequest` construction, `NetworkSessionConfiguration`), `NZNetworkTests` (`RetryPolicy`, `FormBody`, `MIMEType`, multipart/`FilePart` body building, streaming responses, and end-to-end `Network` request/retry/cancellation behavior via a stub `URLProtocol`), and `NZSocketTests` (`NZSocketReconnectPolicy`, message bridging).
+(Swap in whatever simulator name you have installed.) On macOS, `swift build`/`swift test` work directly — no simulator needed. CI runs the iOS command above — plus a plain `build` — on every push and pull request to `main` via [`.github/workflows/ci.yml`](.github/workflows/ci.yml). Test targets: `NZNetworkSharedTests` (URL/`URLRequest` construction, `NetworkSessionConfiguration`), `NZNetworkTests` (`RetryPolicy`, `FormBody`, `MIMEType`, multipart/`FilePart` body building, streaming responses, and end-to-end `Network` request/retry/cancellation behavior via a stub `URLProtocol`), and `NZSocketTests` (`NZSocketReconnectPolicy`, message bridging).
 
 ---
 
@@ -420,7 +422,7 @@ MIMEType(mimeType: "application/custom+type")
 
 ### 1.9 Streaming responses
 
-_Requires iOS 15+._ `get`/`getThrowable` buffer the entire response body before returning it. For Server-Sent Events, newline-delimited JSON, or any endpoint where you want to start processing data as it arrives, use `stream`/`streamLines` instead:
+_Requires iOS 15+/macOS 12+._ `get`/`getThrowable` buffer the entire response body before returning it. For Server-Sent Events, newline-delimited JSON, or any endpoint where you want to start processing data as it arrives, use `stream`/`streamLines` instead:
 
 ```swift
 // Raw byte chunks
@@ -434,7 +436,7 @@ for try await line in network.streamLines(path: Path(route: "/events", queryItem
 }
 ```
 
-Both are GET-only, and a non-2xx status code throws `NetworkError.remoteError` before any chunk is yielded. Neither participates in `RetryPolicy` — retrying mid-stream isn't meaningful — and neither is exposed on `NetworkProtocol`, since it's an `@available(iOS 15.0, *)` addition and the protocol itself has no minimum-OS gate. `stream(path:chunkSize:)` takes an optional `chunkSize` (default 16 KB) controlling how many bytes it buffers before yielding.
+Both are GET-only, and a non-2xx status code throws `NetworkError.remoteError` before any chunk is yielded. Neither participates in `RetryPolicy` — retrying mid-stream isn't meaningful — and neither is exposed on `NetworkProtocol`, since it's an `@available(iOS 15.0, macOS 12.0, *)` addition and the protocol itself has no minimum-OS gate. `stream(path:chunkSize:)` takes an optional `chunkSize` (default 16 KB) controlling how many bytes it buffers before yielding.
 
 ---
 
@@ -463,7 +465,7 @@ final class DownloadHandler: NSObject, NZDownloaderDownloadDelegate {
     func downloader(_ downloader: NZDownloaderProtocol, downloadTask: Int, didResumeAtOffset percentage: Float) {}
     func downloaderCompletedTask(_ downloader: NZDownloaderProtocol, with identifier: Int) {}
     func downloader(_ downloader: NZDownloaderProtocol, didCompleteTask identifier: Int, with error: Error) {}
-    @available(iOS 16.0, *)
+    @available(iOS 16.0, macOS 13.0, *)
     func downloader(_ downloader: NZDownloaderProtocol, didCreateTask identifier: Int) {}
     func downloader(_ downloader: NZDownloaderProtocol, task identifier: Int, willBeginDelayedRequestWith disposition: URLSession.DelayedRequestDisposition) {}
     func downloader(_ downloader: NZDownloaderProtocol, taskIsWaitingForConnectivityWith identifier: Int) {}
