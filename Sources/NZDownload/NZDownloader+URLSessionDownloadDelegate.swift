@@ -63,7 +63,7 @@ extension NZDownloader: URLSessionDownloadDelegate {
     /// - Parameters:
     ///   - session: The URL session that created the task.
     ///   - task: The newly created task.
-    @available(iOS 16.0, *)
+    @available(iOS 16.0, macOS 13.0, *)
     open func urlSession(_ session: URLSession, didCreateTask task: URLSessionTask) {
         let identifier = task.taskIdentifier
         

@@ -129,7 +129,7 @@ public protocol NZDownloaderTaskDelegate {
     /// - Parameters:
     ///   - downloader: The downloader instance.
     ///   - identifier: The unique identifier of the created task.
-    @available(iOS 16.0, *)
+    @available(iOS 16.0, macOS 13.0, *)
     func downloader(_ downloader: NZDownloaderProtocol, didCreateTask identifier: Int)
     
     /// Informs the delegate that a task has been completed.
@@ -307,7 +307,11 @@ public class NZDownloader: NSObject, @unchecked Sendable {
             let configuration: URLSessionConfiguration
             if let backgroundSessionIdentifier {
                 configuration = URLSessionConfiguration.background(withIdentifier: backgroundSessionIdentifier)
-                configuration.sessionSendsLaunchEvents = true
+                // sessionSendsLaunchEvents requires macOS 11.0+ (it's been available on iOS since 7.0,
+                // well below this package's iOS floor); guard it so macOS 10.15 still builds/runs.
+                if #available(macOS 11.0, *) {
+                    configuration.sessionSendsLaunchEvents = true
+                }
             } else {
                 configuration = .default
             }

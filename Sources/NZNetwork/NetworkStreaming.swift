@@ -15,7 +15,7 @@ public extension Network {
     /// - Parameters:
     ///   - path: The path to request.
     ///   - chunkSize: The approximate number of bytes to buffer before yielding a chunk (default 16 KB).
-    @available(iOS 15.0, *)
+    @available(iOS 15.0, macOS 12.0, *)
     func stream(path: Path, chunkSize: Int = 16 * 1024) -> AsyncThrowingStream<Data, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
@@ -49,7 +49,7 @@ public extension Network {
     /// newline-delimited JSON or Server-Sent Events (`data: ...` frames).
     ///
     /// Same behavior/caveats as `stream(path:chunkSize:)` regarding retries and status codes.
-    @available(iOS 15.0, *)
+    @available(iOS 15.0, macOS 12.0, *)
     func streamLines(path: Path) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
@@ -96,7 +96,7 @@ private extension Network {
 
     /// Drains `bytes` into `NetworkError.remoteError` if the response wasn't a 2xx, before any
     /// chunk has been yielded to the caller.
-    @available(iOS 15.0, *)
+    @available(iOS 15.0, macOS 12.0, *)
     static func throwIfNotSuccessful(response: URLResponse, bytes: URLSession.AsyncBytes) async throws {
         guard let httpResponse = response as? HTTPURLResponse else {
             throw NetworkError.localError(

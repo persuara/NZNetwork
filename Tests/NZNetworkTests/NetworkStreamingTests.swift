@@ -7,7 +7,7 @@ private struct StubInterceptor: InterceptorProtocol {
     let timeout: TimeInterval = 5
 }
 
-@available(iOS 15.0, *)
+@available(iOS 15.0, macOS 12.0, *)
 final class NetworkStreamingTests: XCTestCase {
 
     private var network: Network!
